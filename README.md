@@ -1,3 +1,5 @@
+# GDL
+entropy to select optimal GNN depth
 # Entropy-Guided Depth Selection in GNNs
 
 Research codebase for investigating predictive entropy dynamics across message-passing depth in Graph Neural Networks.
