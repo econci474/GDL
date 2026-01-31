@@ -1,13 +1,17 @@
 """Extract layer-wise embeddings from trained GNN models."""
 
 import argparse
-import yaml
 import torch
 from pathlib import Path
+import sys
 
-from datasets import load_dataset
-from models import GCNNet, GATNet
-from utils import set_seed, to_device, get_device
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config as cfg
+
+from src.datasets import load_dataset
+from src.models import GCNNet, GATNet
+from src.utils import set_seed, to_device, get_device
 
 
 def extract_embeddings(dataset_name, model_name, K, seed, config):
@@ -53,7 +57,7 @@ def extract_embeddings(dataset_name, model_name, K, seed, config):
         raise ValueError(f"Unknown model: {model_name}")
     
     # Load trained checkpoint
-    checkpoint_path = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / 'best.pt'
+    checkpoint_path = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'best.pt'
     
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -103,15 +107,25 @@ def main():
     parser.add_argument('--dataset', type=str, required=True)
     parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--K', type=int, default=8)
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--config', type=str, default='config.yaml')
+    parser.add_argument('--seed', type=str, default='0',
+                       help='Random seed or "all" to run all seeds from config')
     
     args = parser.parse_args()
     
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    # Convert config module to dict
+    config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}
     
-    extract_embeddings(args.dataset, args.model, args.K, args.seed, config)
+    # Handle seed argument
+    if args.seed.lower() == 'all':
+        seeds_to_run = config['seeds']
+        print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
+    else:
+        seeds_to_run = [int(args.seed)]
+    
+    # Extract embeddings for each seed
+    for seed in seeds_to_run:
+        extract_embeddings(args.dataset, args.model, args.K, seed, config)
+        print()  # Add spacing between seeds
 
 
 if __name__ == '__main__':

@@ -1,0 +1,2 @@
+dataset,model,selection_method,lambda,n_seeds,k_star_mean,k_star_std,k_star_test_acc_mean,k_star_test_acc_std,k_star_test_entropy_mean,k_star_test_entropy_std,K_max_test_acc_mean,K_max_test_acc_std,K_max_test_entropy_mean,K_max_test_entropy_std,test_acc_improvement,test_entropy_reduction
+Cora,GCN,nll,0.0,3,8.0,0.0,0.3526666666666667,0.0977616148257246,1.4842551666666666,0.18830679081436047,0.3526666666666667,0.0977616148257246,1.4842551666666666,0.18830679081436047,0.0,0.0

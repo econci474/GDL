@@ -1,0 +1,4 @@
+dataset,model,seed,selection_method,lambda,k_star,K_max,k_star_val_nll,k_star_val_acc,k_star_val_entropy,k_star_test_acc,k_star_test_entropy,K_max_val_nll,K_max_val_acc,K_max_val_entropy,K_max_test_acc,K_max_test_entropy
+Cora,GCN,0,nll,0.0,8,8,1.4131004,0.398,1.3330481,0.374,1.3351598,1.4131004,0.398,1.3330481,0.374,1.3351598
+Cora,GCN,1,nll,0.0,8,8,1.4340634,0.444,1.4061066,0.438,1.4217358,1.4340634,0.444,1.4061066,0.438,1.4217358
+Cora,GCN,2,nll,0.0,8,8,1.7014036,0.24,1.692489,0.246,1.6958699,1.7014036,0.24,1.692489,0.246,1.6958699

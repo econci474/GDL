@@ -2,15 +2,19 @@
 
 import argparse
 import os
-import yaml
 import pandas as pd
 import torch
 import torch.nn.functional as F
+import sys
 from pathlib import Path
 
-from datasets import load_dataset
-from models import GCNNet, GATNet
-from utils import set_seed, to_device, get_device
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config as cfg
+
+from src.datasets import load_dataset
+from src.models import GCNNet, GATNet
+from src.utils import set_seed, to_device, get_device
 
 
 def train_epoch(model, data, optimizer, device):
@@ -112,7 +116,7 @@ def train_gnn(dataset_name, model_name, K, seed, config):
     patience_counter = 0
     train_log = []
     
-    output_dir = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}'
+    output_dir = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"\nTraining for up to {config['max_epochs']} epochs...")
@@ -172,6 +176,12 @@ def train_gnn(dataset_name, model_name, K, seed, config):
     
 
 def main():
+    import sys
+    from pathlib import Path
+    # Add project root to path to import config
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    import config as cfg
+    
     parser = argparse.ArgumentParser(description='Train GNN model')
     parser.add_argument('--dataset', type=str, required=True,
                        help='Dataset name (Cora, PubMed, etc.)')
@@ -179,19 +189,25 @@ def main():
                        help='Model name (GCN, GAT)')
     parser.add_argument('--K', type=int, default=8,
                        help='Number of layers')
-    parser.add_argument('--seed', type=int, default=0,
-                       help='Random seed')
-    parser.add_argument('--config', type=str, default='config.yaml',
-                       help='Path to config file')
+    parser.add_argument('--seed', type=str, default='0',
+                       help='Random seed or "all" to run all seeds from config')
     
     args = parser.parse_args()
     
-    # Load config
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    # Convert config module to dict
+    config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}
     
-    # Train model
-    train_gnn(args.dataset, args.model, args.K, args.seed, config)
+    # Handle seed argument
+    if args.seed.lower() == 'all':
+        seeds_to_run = config['seeds']
+        print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
+    else:
+        seeds_to_run = [int(args.seed)]
+    
+    # Train model for each seed
+    for seed in seeds_to_run:
+        train_gnn(args.dataset, args.model, args.K, seed, config)
+        print()  # Add spacing between seeds
 
 
 if __name__ == '__main__':
