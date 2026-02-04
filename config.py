@@ -12,9 +12,9 @@ max_epochs = 500
 patience = 100
 
 # Experiments
-seeds = [0, 1, 2]
+seeds = [0, 1, 2, 3]
 datasets = ['Cora', 'PubMed', 'Roman-empire', 'Minesweeper']
-models = ['GCN', 'GAT']
+models = ['GCN', 'GAT', 'GraphSAGE']
 
 # GAT specific
 gat_heads = 8

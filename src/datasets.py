@@ -35,22 +35,26 @@ def load_dataset(name: str):
         dataset = HeterophilousGraphDataset(root='/tmp/Roman-empire', name='Roman-empire',
                                            transform=NormalizeFeatures())
         data = dataset[0]
-        # Generate splits if not provided
-        if not hasattr(data, 'train_mask') or data.train_mask is None:
-            data = _generate_splits(data, train_ratio=0.6, val_ratio=0.2, seed=42)
+        # HeterophilousGraphDataset provides 2D masks [N, num_splits], use first split
+        if len(data.train_mask.shape) > 1:
+            data.train_mask = data.train_mask[:, 0]
+            data.val_mask = data.val_mask[:, 0]
+            data.test_mask = data.test_mask[:, 0]
             
     elif name == 'minesweeper':
         dataset = HeterophilousGraphDataset(root='/tmp/Minesweeper', name='Minesweeper',
                                            transform=NormalizeFeatures())
         data = dataset[0]
-        # Generate splits if not provided
-        if not hasattr(data, 'train_mask') or data.train_mask is None:
-            data = _generate_splits(data, train_ratio=0.6, val_ratio=0.2, seed=42)
+        # HeterophilousGraphDataset provides 2D masks [N, num_splits], use first split
+        if len(data.train_mask.shape) > 1:
+            data.train_mask = data.train_mask[:, 0]
+            data.val_mask = data.val_mask[:, 0]
+            data.test_mask = data.test_mask[:, 0]
             
     else:
         raise ValueError(f"Unknown dataset: {name}")
     
-    # Ensure masks exist
+    # Ensure masks exist and are 1D
     if not hasattr(data, 'train_mask') or data.train_mask is None:
         data = _generate_splits(data, train_ratio=0.6, val_ratio=0.2, seed=42)
     

@@ -53,6 +53,14 @@ def extract_embeddings(dataset_name, model_name, K, seed, config):
             heads=config['gat_heads'],
             dropout=None
         )
+    elif model_name == 'GraphSAGE':
+        model = GraphSAGENet(
+            num_features=data.num_features,
+            hidden_dim=config['hidden_dim'],
+            num_classes=int(data.y.max().item()) + 1,
+            K=K,
+            dropout=None
+        )
     else:
         raise ValueError(f"Unknown model: {model_name}")
     

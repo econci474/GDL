@@ -141,6 +141,24 @@ def probe_at_depth(embeddings, labels, train_mask, val_mask, test_mask, weight_d
     y_val_np = y_val.cpu().numpy()
     y_test_np = y_test.cpu().numpy()
     
+    # Comprehensive data integrity checks
+    assert p_val.shape[0] == val_mask.sum().item(), \
+        f"Val probs shape mismatch: {p_val.shape[0]} vs {val_mask.sum().item()} val nodes"
+    assert p_test.shape[0] == test_mask.sum().item(), \
+        f"Test probs shape mismatch: {p_test.shape[0]} vs {test_mask.sum().item()} test nodes"
+    assert p_val.shape[1] == num_classes, \
+        f"Val probs classes mismatch: {p_val.shape[1]} vs {num_classes}"
+    assert p_test.shape[1] == num_classes, \
+        f"Test probs classes mismatch: {p_test.shape[1]} vs {num_classes}"
+    assert np.allclose(p_val.sum(axis=1), 1, atol=1e-4), \
+        f"Val probs not normalized: min={p_val.sum(axis=1).min():.4f}, max={p_val.sum(axis=1).max():.4f}"
+    assert np.allclose(p_test.sum(axis=1), 1, atol=1e-4), \
+        f"Test probs not normalized: min={p_test.sum(axis=1).min():.4f}, max={p_test.sum(axis=1).max():.4f}"
+    assert (p_val >= 0).all() and (p_val <= 1).all(), \
+        f"Val probs out of range: min={p_val.min():.4f}, max={p_val.max():.4f}"
+    assert (p_test >= 0).all() and (p_test <= 1).all(), \
+        f"Test probs out of range: min={p_test.min():.4f}, max={p_test.max():.4f}"
+    
     # Compute metrics
     val_nll = compute_nll(p_val, y_val_np)
     val_acc = compute_accuracy(np.argmax(p_val, axis=1), y_val_np)
@@ -149,6 +167,16 @@ def probe_at_depth(embeddings, labels, train_mask, val_mask, test_mask, weight_d
     # Compute entropy statistics
     val_entropy_stats = compute_entropy_stats(p_val, y_val_np)
     test_entropy_stats = compute_entropy_stats(p_test, y_test_np)
+    
+    # Compute per-node entropies and error indicators
+    H_val = entropy_from_probs(p_val)
+    H_test = entropy_from_probs(p_test)
+    
+    pred_val = np.argmax(p_val, axis=1)
+    pred_test = np.argmax(p_test, axis=1)
+    
+    e_val = (pred_val != y_val_np).astype(np.int32)  # 1 = wrong, 0 = correct
+    e_test = (pred_test != y_test_np).astype(np.int32)
     
     results = {
         'best_weight_decay': best_wd,
@@ -163,7 +191,17 @@ def probe_at_depth(embeddings, labels, train_mask, val_mask, test_mask, weight_d
         'incorrect_entropy_mean': test_entropy_stats['incorrect_mean'],
     }
     
-    return results
+    # Return per-node arrays for separability analysis
+    per_node_data = {
+        'H_val': H_val,
+        'H_test': H_test,
+        'e_val': e_val,
+        'e_test': e_test,
+        'p_val': p_val,
+        'p_test': p_test,
+    }
+    
+    return results, per_node_data
 
 
 def probe_all_depths(dataset_name, model_name, K, seed, config):
@@ -209,12 +247,13 @@ def probe_all_depths(dataset_name, model_name, K, seed, config):
     
     # Probe at each depth
     results_list = []
+    per_node_arrays = {}  # Collect per-node data for all depths
     
     for k in range(K + 1):
         print(f"\nProbing at depth k={k}...")
         
         emb = embeddings_dict[k]
-        results = probe_at_depth(
+        results, per_node_data = probe_at_depth(
             emb, labels, train_mask, val_mask, test_mask,
             weight_decay_values, seed, device
         )
@@ -222,6 +261,10 @@ def probe_all_depths(dataset_name, model_name, K, seed, config):
         # Add depth to results
         results['k'] = k
         results_list.append(results)
+        
+        # Store per-node data
+        for key, value in per_node_data.items():
+            per_node_arrays[f'{key}_{k}'] = value
         
         print(f"  Val NLL: {results['val_nll']:.4f}, Val Acc: {results['val_acc']:.4f}")
         print(f"  Test Acc: {results['test_acc']:.4f}, Test Entropy: {results['test_entropy_mean']:.4f}")
@@ -243,8 +286,20 @@ def probe_all_depths(dataset_name, model_name, K, seed, config):
     output_path = output_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_probe.csv'
     df.to_csv(output_path, index=False)
     
-    print(f"\n✓ Probing complete!")
+    # Save per-node arrays to arrays directory
+    arrays_dir = Path(config['results_dir']) / 'arrays'
+    arrays_dir.mkdir(parents=True, exist_ok=True)
+    
+    arrays_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_pernode.npz'
+    
+    # Add k_list for reference
+    per_node_arrays['k_list'] = np.arange(K + 1)
+    
+    np.savez(arrays_path, **per_node_arrays)
+    
+    print(f"\n[DONE] Probing complete!")
     print(f"  Results saved to: {output_path}")
+    print(f"  Per-node arrays saved to: {arrays_path}")
     print(f"\nSummary:")
     print(df[['k', 'val_nll', 'val_acc', 'test_acc', 'test_entropy_mean']].to_string(index=False))
 

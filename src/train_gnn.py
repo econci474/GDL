@@ -81,24 +81,28 @@ def train_gnn(dataset_name, model_name, K, seed, config):
     
     data = load_dataset(dataset_name)
     
-    # Create model
+    from src.models import GCNNet, GATNet, GraphSAGENet
+    
     if model_name == 'GCN':
-        model = GCNNet(
-            num_features=data.num_features,
-            hidden_dim=config['hidden_dim'],
-            num_classes=int(data.y.max().item()) + 1,
-            K=K,
-            dropout=config['dropout']
-        )
+        model = GCNNet(num_features=data.num_features, 
+                       hidden_dim=config['hidden_dim'], 
+                       num_classes=int(data.y.max().item()) + 1, # Assuming data.num_classes is not available directly
+                       K=K,
+                       dropout=None)
     elif model_name == 'GAT':
-        model = GATNet(
-            num_features=data.num_features,
-            hidden_dim=config['hidden_dim'],
-            num_classes=int(data.y.max().item()) + 1,
-            K=K,
-            heads=config['gat_heads'],
-            dropout=config['dropout']
-        )
+        model = GATNet(num_features=data.num_features, 
+                       hidden_dim=config['hidden_dim'], 
+                       num_classes=int(data.y.max().item()) + 1, # Assuming data.num_classes is not available directly
+                       K=K,
+                       heads=config.get('gat_heads', 8),
+                       dropout=None)
+    elif model_name == 'GraphSAGE':
+        model = GraphSAGENet(num_features=data.num_features,
+                            hidden_dim=config['hidden_dim'],
+                            num_classes=int(data.y.max().item()) + 1, # Assuming data.num_classes is not available directly
+                            K=K,
+                            aggr=config.get('sage_aggr', 'mean'),
+                            dropout=None)
     else:
         raise ValueError(f"Unknown model: {model_name}")
     
