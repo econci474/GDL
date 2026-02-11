@@ -30,7 +30,7 @@ def plot_training_curves(dataset_name, model_name, K, config, seeds=None):
         axes = [axes]
     
     for idx, seed in enumerate(seeds):
-        log_file = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / 'train_log.csv'
+        log_file = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'train_log.csv'
         
         if not log_file.exists():
             print(f"  ⚠ Training log not found for seed {seed}")

@@ -132,7 +132,7 @@ def compute_entropy_stats(probs, labels, mask=None):
     
     return stats
 
-
+##just a test, can be deleted later
 if __name__ == '__main__':
     # Test metrics
     print("Testing entropy computation...")

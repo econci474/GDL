@@ -5,14 +5,16 @@ from torch_geometric.datasets import Planetoid, HeterophilousGraphDataset
 from torch_geometric.transforms import NormalizeFeatures
 import numpy as np
 
-
-def load_dataset(name: str):
+def load_dataset(name: str, root_dir: str = "data", planetoid_split: str = "public", planetoid_normalize: bool = True):
     """
     Load a node classification dataset with standard splits.
     
     Args:
-        name: Dataset name ('Cora', 'PubMed', 'Roman-empire', 'Minesweeper')
-        
+        name: 'cora', 'pubmed', 'roman-empire', 'minesweeper'
+        root_dir: where datasets are downloaded/cached
+        planetoid_split: split protocol for Planetoid datasets ("public", "full", "random")
+        planetoid_normalize: whether to normalize node features for Planetoid datasets
+
     Returns:
         data: torch_geometric.data.Data object with:
             - data.x: [N, F] node features
@@ -21,101 +23,51 @@ def load_dataset(name: str):
             - data.train_mask, data.val_mask, data.test_mask: [N] boolean masks
     """
     name = name.lower()
+    transform = NormalizeFeatures() if planetoid_normalize else None
     
+    # For Cora, should the split be public or full? 
     if name == 'cora':
-        dataset = Planetoid(root='/tmp/Cora', name='Cora', transform=NormalizeFeatures())
-        data = dataset[0]
+        dataset = Planetoid(root=root_dir, name='Cora', split=planetoid_split, transform=transform)
+        data = dataset[0] #the one and only graph in this dataset
+        dataset_kind = "homophilous"
         
     elif name == 'pubmed':
-        dataset = Planetoid(root='/tmp/PubMed', name='PubMed', transform=NormalizeFeatures())
-        data = dataset[0]
+        dataset = Planetoid(root=root_dir, name='PubMed', split=planetoid_split, transform=transform)
+        data = dataset[0] #the one and only graph in this dataset
+        dataset_kind = "homophilous"
         
     elif name == 'roman-empire':
         # Use PyG's heterophilous graph dataset collection
-        dataset = HeterophilousGraphDataset(root='/tmp/Roman-empire', name='Roman-empire',
-                                           transform=NormalizeFeatures())
+        dataset = HeterophilousGraphDataset(root=root_dir, name='Roman-empire')
         data = dataset[0]
-        # HeterophilousGraphDataset provides 2D masks [N, num_splits], use first split
-        if len(data.train_mask.shape) > 1:
-            data.train_mask = data.train_mask[:, 0]
-            data.val_mask = data.val_mask[:, 0]
-            data.test_mask = data.test_mask[:, 0]
-            
+        dataset_kind = "heterophilous"
+        
     elif name == 'minesweeper':
-        dataset = HeterophilousGraphDataset(root='/tmp/Minesweeper', name='Minesweeper',
-                                           transform=NormalizeFeatures())
+        dataset = HeterophilousGraphDataset(root=root_dir, name='Minesweeper')
         data = dataset[0]
-        # HeterophilousGraphDataset provides 2D masks [N, num_splits], use first split
-        if len(data.train_mask.shape) > 1:
-            data.train_mask = data.train_mask[:, 0]
-            data.val_mask = data.val_mask[:, 0]
-            data.test_mask = data.test_mask[:, 0]
+        dataset_kind = "heterophilous"
             
     else:
         raise ValueError(f"Unknown dataset: {name}")
     
     # Ensure masks exist and are 1D
-    if not hasattr(data, 'train_mask') or data.train_mask is None:
-        data = _generate_splits(data, train_ratio=0.6, val_ratio=0.2, seed=42)
+    for m in ["train_mask", "val_mask", "test_mask"]:
+        if not hasattr(data, m) or getattr(data, m) is None:
+            raise ValueError(f"Masks not found: data.{m} is missing")
     
     print(f"\nDataset: {name.capitalize()}")
     print(f"  Nodes: {data.num_nodes}")
     print(f"  Edges: {data.num_edges}")
     print(f"  Features: {data.num_features}")
     print(f"  Classes: {dataset.num_classes}")
-    print(f"  Train nodes: {data.train_mask.sum().item()}")
-    print(f"  Val nodes: {data.val_mask.sum().item()}")
-    print(f"  Test nodes: {data.test_mask.sum().item()}")
+    if data.train_mask.dim() == 1:
+        print(f"  Train nodes: {int(data.train_mask.sum())}")
+        print(f"  Val nodes:   {int(data.val_mask.sum())}")
+        print(f"  Test nodes:  {int(data.test_mask.sum())}")
+    else:
+        print(f"  Train mask shape: {tuple(data.train_mask.shape)}")
+        print(f"  Val mask shape:   {tuple(data.val_mask.shape)}")
+        print(f"  Test mask shape:  {tuple(data.test_mask.shape)}")
     
-    return data
+    return data, dataset.num_classes, dataset_kind
 
-
-def _generate_splits(data, train_ratio=0.6, val_ratio=0.2, seed=42):
-    """
-    Generate train/val/test splits if not provided.
-    
-    Args:
-        data: torch_geometric.data.Data object
-        train_ratio: Fraction of nodes for training
-        val_ratio: Fraction of nodes for validation
-        seed: Random seed for reproducibility
-        
-    Returns:
-        data with train_mask, val_mask, test_mask added
-    """
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    
-    num_nodes = data.num_nodes
-    indices = torch.randperm(num_nodes)
-    
-    train_size = int(train_ratio * num_nodes)
-    val_size = int(val_ratio * num_nodes)
-    
-    train_mask = torch.zeros(num_nodes, dtype=torch.bool)
-    val_mask = torch.zeros(num_nodes, dtype=torch.bool)
-    test_mask = torch.zeros(num_nodes, dtype=torch.bool)
-    
-    train_mask[indices[:train_size]] = True
-    val_mask[indices[train_size:train_size + val_size]] = True
-    test_mask[indices[train_size + val_size:]] = True
-    
-    data.train_mask = train_mask
-    data.val_mask = val_mask
-    data.test_mask = test_mask
-    
-    return data
-
-
-if __name__ == '__main__':
-    # Test dataset loading
-    print("Testing dataset loaders...")
-    for dataset_name in ['Cora']:  # Start with Cora for prototype
-        data = load_dataset(dataset_name)
-        assert data.x is not None
-        assert data.y is not None
-        assert data.edge_index is not None
-        assert data.train_mask is not None
-        assert data.val_mask is not None
-        assert data.test_mask is not None
-        print(f"✓ {dataset_name} loaded successfully\n")

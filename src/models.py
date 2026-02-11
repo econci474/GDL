@@ -13,7 +13,7 @@ class GCNNet(nn.Module):
     Supports both standard forward pass and embedding extraction.
     """
     
-    def __init__(self, num_features, hidden_dim, num_classes, K, dropout=None):
+    def __init__(self, num_features, hidden_dim, num_classes, K, dropout=None, normalize=True):
         """
         Args:
             num_features: Input feature dimension
@@ -21,20 +21,28 @@ class GCNNet(nn.Module):
             num_classes: Number of output classes
             K: Number of GCN layers
             dropout: Dropout probability (None = no dropout)
+            normalize: Whether to add self-loops and apply symmetric normalization
         """
         super(GCNNet, self).__init__()
         
         self.K = K
         self.dropout = dropout
+        self.normalize = normalize
         
-        # Build K GCN layers
+        # Build K GCN layers with normalization
         self.convs = nn.ModuleList()
-        self.convs.append(GCNConv(num_features, hidden_dim))
+        self.convs.append(GCNConv(num_features, hidden_dim, normalize=normalize))
         for _ in range(K - 1):
-            self.convs.append(GCNConv(hidden_dim, hidden_dim))
+            self.convs.append(GCNConv(hidden_dim, hidden_dim, normalize=normalize))
         
         # Final classifier
         self.classifier = nn.Linear(hidden_dim, num_classes)
+
+        # MULTIPLE classifiers (one per layer):
+        self.layer_classifiers = nn.ModuleList()
+        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0
+        for _ in range(K):
+            self.layer_classifiers.append(nn.Linear(hidden_dim, num_classes))  # For k=1..K
         
     def forward(self, data):
         """
@@ -85,6 +93,26 @@ class GCNNet(nn.Module):
         
         logits = self.classifier(x)
         return embeddings, logits
+    
+    def forward_with_classifier_head(self, data):
+        """
+        Returns per-layer logits and per-layer softmax probabilities.
+
+        Returns:
+            layer_logits: List of [N, C] tensors for k=0..K
+            layer_probs:  List of [N, C] tensors for k=0..K (softmax over classes)
+        """
+        embeddings, _ = self.forward_with_embeddings(data)
+
+        layer_logits = []
+        layer_probs = []
+        for k, emb in enumerate(embeddings):
+            logits_k = self.layer_classifiers[k](emb)
+            probs_k = F.softmax(logits_k, dim=-1)
+            layer_logits.append(logits_k)
+            layer_probs.append(probs_k)
+
+        return layer_logits, layer_probs
 
 
 class GATNet(nn.Module):
@@ -118,8 +146,14 @@ class GATNet(nn.Module):
             # Input: heads * hidden_dim from previous layer
             self.convs.append(GATConv(heads * hidden_dim, hidden_dim, heads=heads, concat=True))
         
-        # Final classifier (input: heads * hidden_dim)
+        # Final classifier (input: heads * hidden_dim because GAT concatenates)
         self.classifier = nn.Linear(heads * hidden_dim, num_classes)
+
+        # MULTIPLE classifiers (one per layer):
+        self.layer_classifiers = nn.ModuleList()
+        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0
+        for _ in range(K):
+            self.layer_classifiers.append(nn.Linear(heads * hidden_dim, num_classes))  # For k=1..K
         
     def forward(self, data):
         """
@@ -169,6 +203,26 @@ class GATNet(nn.Module):
         logits = self.classifier(x)
         return embeddings, logits
 
+    def forward_with_classifier_head(self, data):
+        """
+        Returns per-layer logits and per-layer softmax probabilities.
+
+        Returns:
+            layer_logits: List of [N, C] tensors for k=0..K
+            layer_probs:  List of [N, C] tensors for k=0..K (softmax over classes)
+        """
+        embeddings, _ = self.forward_with_embeddings(data)
+
+        layer_logits = []
+        layer_probs = []
+        for k, emb in enumerate(embeddings):
+            logits_k = self.layer_classifiers[k](emb)
+            probs_k = F.softmax(logits_k, dim=-1)
+            layer_logits.append(logits_k)
+            layer_probs.append(probs_k)
+
+        return layer_logits, layer_probs
+
 
 class GraphSAGENet(nn.Module):
     """
@@ -201,7 +255,13 @@ class GraphSAGENet(nn.Module):
         
         # Final classifier
         self.classifier = nn.Linear(hidden_dim, num_classes)
-        
+
+        # MULTIPLE classifiers (one per layer):
+        self.layer_classifiers = nn.ModuleList()
+        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0
+        for _ in range(K):
+            self.layer_classifiers.append(nn.Linear(hidden_dim, num_classes))  # For k=1..K
+
     def forward(self, data):
         """
         Standard forward pass returning final logits.
@@ -251,6 +311,27 @@ class GraphSAGENet(nn.Module):
         
         logits = self.classifier(x)
         return embeddings, logits
+    
+    def forward_with_classifier_head(self, data):
+        """
+        Returns per-layer logits and per-layer softmax probabilities.
+
+        Returns:
+            layer_logits: List of [N, C] tensors for k=0..K
+            layer_probs:  List of [N, C] tensors for k=0..K (softmax over classes)
+        """
+        embeddings, _ = self.forward_with_embeddings(data)
+
+        layer_logits = []
+        layer_probs = []
+        for k, emb in enumerate(embeddings):
+            logits_k = self.layer_classifiers[k](emb)
+            probs_k = F.softmax(logits_k, dim=-1)
+            layer_logits.append(logits_k)
+            layer_probs.append(probs_k)
+
+        return layer_logits, layer_probs
+
 
 
 if __name__ == '__main__':
@@ -266,7 +347,8 @@ if __name__ == '__main__':
                    hidden_dim=64, 
                    num_classes=7,  # Cora has 7 classes
                    K=8,
-                   dropout=None)
+                   dropout=None,
+                   normalize=True)
     
     # Test standard forward
     logits = model(data)

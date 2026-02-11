@@ -42,7 +42,8 @@ def extract_embeddings(dataset_name, model_name, K, seed, config):
             hidden_dim=config['hidden_dim'],
             num_classes=int(data.y.max().item()) + 1,
             K=K,
-            dropout=None  # No dropout during inference
+            dropout=None,  # No dropout during inference, 
+            normalize=True
         )
     elif model_name == 'GAT':
         model = GATNet(
