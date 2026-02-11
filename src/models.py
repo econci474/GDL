@@ -38,10 +38,10 @@ class GCNNet(nn.Module):
         # Final classifier
         self.classifier = nn.Linear(hidden_dim, num_classes)
 
-        # MULTIPLE classifiers (one per layer):
+        # MULTIPLE classifiers (one per layer): K+1 total for k=0..K
         self.layer_classifiers = nn.ModuleList()
-        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0
-        for _ in range(K):
+        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0 (input features)
+        for k in range(1, K + 1):
             self.layer_classifiers.append(nn.Linear(hidden_dim, num_classes))  # For k=1..K
         
     def forward(self, data):
@@ -149,10 +149,10 @@ class GATNet(nn.Module):
         # Final classifier (input: heads * hidden_dim because GAT concatenates)
         self.classifier = nn.Linear(heads * hidden_dim, num_classes)
 
-        # MULTIPLE classifiers (one per layer):
+        # MULTIPLE classifiers (one per layer): K+1 total for k=0..K
         self.layer_classifiers = nn.ModuleList()
-        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0
-        for _ in range(K):
+        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0 (input features)
+        for k in range(1, K + 1):
             self.layer_classifiers.append(nn.Linear(heads * hidden_dim, num_classes))  # For k=1..K
         
     def forward(self, data):
@@ -256,10 +256,10 @@ class GraphSAGENet(nn.Module):
         # Final classifier
         self.classifier = nn.Linear(hidden_dim, num_classes)
 
-        # MULTIPLE classifiers (one per layer):
+        # MULTIPLE classifiers (one per layer): K+1 total for k=0..K
         self.layer_classifiers = nn.ModuleList()
-        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0
-        for _ in range(K):
+        self.layer_classifiers.append(nn.Linear(num_features, num_classes))  # For k=0 (input features)
+        for k in range(1, K + 1):
             self.layer_classifiers.append(nn.Linear(hidden_dim, num_classes))  # For k=1..K
 
     def forward(self, data):
