@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.training_diagnostics import plot_training_curves, plot_accuracy_curves
 import config as cfg
 
-datasets = ['Cora', 'PubMed', 'Roman-empire', 'Minesweeper']
+datasets = ['Cora', 'PubMed']
 model = 'GCN'
 K_values = list(range(9))  # 0-8
 seeds = [0, 1, 2, 3]
@@ -45,7 +45,7 @@ for K in K_values:
         for plot_type in plot_types:
             # Individual seeds
             for seed in seeds:
-                cmd = f'python scripts/plot_node_entropy_vs_prob.py --dataset {dataset} --model {model} --K {K} --seed {seed} --split val --plot_type {plot_type}'
+                cmd = f'python -m src.plot_node_entropy_vs_prob --dataset {dataset} --model {model} --K {K} --seed {seed} --split val --plot_type {plot_type}'
                 
                 print(f"  K={K} {dataset} {plot_type} seed={seed}...", end=" ")
                 result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -58,7 +58,7 @@ for K in K_values:
                 total_plots += 1
             
             # Aggregated (all seeds)
-            cmd = f'python scripts/plot_node_entropy_vs_prob.py --dataset {dataset} --model {model} --K {K} --seed all --split val --plot_type {plot_type}'
+            cmd = f'python -m src.plot_node_entropy_vs_prob --dataset {dataset} --model {model} --K {K} --seed all --split val --plot_type {plot_type}'
             print(f"  K={K} {dataset} {plot_type} seed=all...", end=" ")
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             if result.returncode == 0:
@@ -69,7 +69,7 @@ for K in K_values:
             total_plots += 1
             
             # Aggregated (seeds 0,1,3 - not seed 2)
-            cmd = f'python scripts/plot_node_entropy_vs_prob.py --dataset {dataset} --model {model} --K {K} --seed 0,1,3 --split val --plot_type {plot_type}'
+            cmd = f'python -m src.plot_node_entropy_vs_prob --dataset {dataset} --model {model} --K {K} --seed 0,1,3 --split val --plot_type {plot_type}'
             print(f"  K={K} {dataset} {plot_type} seed=0,1,3...", end=" ")
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             if result.returncode == 0:
@@ -164,5 +164,6 @@ print(f"  Separability: {sep_completed}/{len(K_values) * len(datasets)} (failed:
 print(f"  Training diagnostics: {diag_completed}/{len(K_values) * len(datasets)} (failed: {diag_failed})")
 print(f"Time: {datetime.now().strftime('%H:%M:%S')}")
 print('='*60)
+
 
 

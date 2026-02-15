@@ -45,18 +45,14 @@ def evaluate(model, data, device):
     model.eval()
     data = to_device(data, device)
     
-    logits = model(data)
+    out = model(data)
     
     # Validation metrics
-    val_loss = F.cross_entropy(logits[data.val_mask], data.y[data.val_mask]).item()
-    val_pred = logits[data.val_mask].argmax(dim=1)
+    val_loss = F.cross_entropy(out[data.val_mask], data.y[data.val_mask]).item()
+    val_pred = out[data.val_mask].argmax(dim=1)
     val_acc = (val_pred == data.y[data.val_mask]).sum() / data.val_mask.sum()
     
-    # Test metrics
-    test_pred = logits[data.test_mask].argmax(dim=1)
-    test_acc = (test_pred == data.y[data.test_mask]).sum() / data.test_mask.sum()
-    
-    return float(val_loss), float(val_acc.item()), float(test_acc.item())
+    return float(val_loss), float(val_acc.item())
 
 def get_num_splits(data):
     return data.train_mask.size(1) if data.train_mask.dim() > 1 else 1
@@ -133,7 +129,6 @@ def run_one_split(
 
     best_val_loss = float("inf")
     best_val_acc = 0.0
-    best_test_acc = 0.0
     best_epoch = 0
     patience_counter = 0
     train_log = []
@@ -142,7 +137,7 @@ def run_one_split(
 
     for epoch in range(1, config["max_epochs"] + 1):
         train_loss, train_acc = train_epoch(model, data_split, optimizer, device)
-        val_loss, val_acc, test_acc = evaluate(model, data_split, device)
+        val_loss, val_acc = evaluate(model, data_split, device)
 
         scheduler.step(val_loss)
 
@@ -153,7 +148,11 @@ def run_one_split(
                 train_acc=train_acc,
                 val_loss=val_loss,
                 val_acc=val_acc,
-                test_acc=test_acc,
+                # Hyperparameter metadata
+                lr=config["lr"],
+                patience=config["patience"],
+                max_epochs=config["max_epochs"],
+                K=K,
             )
         )
 
@@ -161,15 +160,13 @@ def run_one_split(
             print(
                 f"Epoch {epoch:3d} | "
                 f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f} | "
-                f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f} | "
-                f"Test Acc: {test_acc:.4f}"
+                f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}"
             )
 
         # Early stopping on val_loss
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_acc = val_acc
-            best_test_acc = test_acc
             best_epoch = epoch
             patience_counter = 0
 
@@ -180,7 +177,6 @@ def run_one_split(
                     optimizer_state_dict=optimizer.state_dict(),
                     val_loss=val_loss,
                     val_acc=val_acc,
-                    test_acc=test_acc,
                 ),
                 output_dir / "best.pt",
             )
@@ -192,13 +188,42 @@ def run_one_split(
 
     pd.DataFrame(train_log).to_csv(output_dir / "train_log.csv", index=False)
 
+    # Extract and save embeddings from the best model
+    print(f"\n💾 Extracting embeddings...")
+    checkpoint = torch.load(output_dir / "best.pt", map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    
+    with torch.no_grad():
+        embeddings, logits = model.forward_with_embeddings(data_split)
+    
+    # Convert to CPU and create dict structure
+    embeddings_dict = {}
+    for k, emb in enumerate(embeddings):
+        embeddings_dict[k] = emb.cpu()
+    
+    embeddings_data = {
+        'embeddings': embeddings_dict,
+        'labels': data_split.y.cpu(),
+        'train_mask': data_split.train_mask.cpu(),
+        'val_mask': data_split.val_mask.cpu(),
+        'test_mask': data_split.test_mask.cpu(),
+        'K': K,
+        'num_nodes': data_split.num_nodes
+    }
+    
+    # Save at the K level (same dir as best.pt and train_log.csv)
+    embeddings_path = output_dir / "embeddings.pt"
+    torch.save(embeddings_data, embeddings_path)
+    size_mb = embeddings_path.stat().st_size / 1024 / 1024
+    print(f"  ✓ Embeddings saved: {embeddings_path.name} ({size_mb:.1f} MB, {len(embeddings_dict)} layers)")
+
     print(f"\n✓ Split complete: {output_dir}")
     print(f"  Best epoch: {best_epoch}")
     print(f"  Best val loss: {best_val_loss:.4f}")
     print(f"  Best val acc:  {best_val_acc:.4f}")
-    print(f"  Best test acc: {best_test_acc:.4f}")
 
-    return dict(best_epoch=best_epoch, best_val_loss=best_val_loss, best_val_acc=best_val_acc, best_test_acc=best_test_acc)
+    return dict(best_epoch=best_epoch, best_val_loss=best_val_loss, best_val_acc=best_val_acc)
 
 
 def train_gnn(dataset_name: str, model_name: str, K: int, seed: int, args, config: dict):
@@ -260,11 +285,11 @@ def train_gnn(dataset_name: str, model_name: str, K: int, seed: int, args, confi
 
     # If multiple splits were run, summarize mean±std
     if len(results) > 1:
-        test_accs = [r["best_test_acc"] for r in results]
-        mean = float(np.mean(test_accs))
-        std = float(np.std(test_accs, ddof=1))
+        val_accs = [r["best_val_acc"] for r in results]
+        mean = float(np.mean(val_accs))
+        std = float(np.std(val_accs, ddof=1))
         print(f"\nSUMMARY for {args.dataset} ({args.model}, K={args.K}, seed={seed}):")
-        print(f"  Test Acc: {mean:.4f} ± {std:.4f} over {len(results)} splits")
+        print(f"  Val Acc: {mean:.4f} ± {std:.4f} over {len(results)} splits")
 
         # Save summary at the seed level
         base_dir.mkdir(parents=True, exist_ok=True)

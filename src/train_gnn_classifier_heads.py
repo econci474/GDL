@@ -97,9 +97,7 @@ def evaluate_multi_layer(model, data, device, loss_type, class_weights=None):
     model.eval()
     data = to_device(data, device)
     
-    layer_logits, layer_probs = model.forward_with_classifier_head(data)
-    
-    # Use final layer for evaluation
+    layer_logits, _ = model.forward_with_classifier_head(data)
     final_logits = layer_logits[-1]
     
     # Validation metrics
@@ -115,11 +113,7 @@ def evaluate_multi_layer(model, data, device, loss_type, class_weights=None):
     val_pred = final_logits[data.val_mask].argmax(dim=1)
     val_acc = (val_pred == data.y[data.val_mask]).sum() / data.val_mask.sum()
     
-    # Test metrics
-    test_pred = final_logits[data.test_mask].argmax(dim=1)
-    test_acc = (test_pred == data.y[data.test_mask]).sum() / data.test_mask.sum()
-    
-    return float(val_loss), float(val_acc.item()), float(test_acc.item())
+    return float(val_loss), float(val_acc.item())
 
 
 def get_num_splits(data):
@@ -206,7 +200,6 @@ def run_one_split(
 
     best_val_loss = float("inf")
     best_val_acc = 0.0
-    best_test_acc = 0.0
     best_epoch = 0
     patience_counter = 0
     train_log = []
@@ -217,20 +210,26 @@ def run_one_split(
         train_loss, train_acc, layer_losses = train_epoch_multi_layer(
             model, data_split, optimizer, device, loss_type, beta, K, class_weights
         )
-        val_loss, val_acc, test_acc = evaluate_multi_layer(
-            model, data_split, device, loss_type, class_weights
+        val_loss, val_acc = evaluate_multi_layer(
+            model, data_split, device, loss_type=loss_type, class_weights=class_weights
         )
 
         scheduler.step(val_loss)
 
-        # Log per-layer losses
+        # Log per-layer losses and hyperparameters
         log_entry = dict(
             epoch=epoch,
             train_loss=train_loss,
             train_acc=train_acc,
             val_loss=val_loss,
             val_acc=val_acc,
-            test_acc=test_acc,
+            # Hyperparameter metadata
+            lr=config["lr"],
+            patience=config["patience"],
+            max_epochs=config["max_epochs"],
+            beta=beta,
+            loss_type=loss_type,
+            K=K,
         )
         # Add per-layer train losses
         for k, loss_k in enumerate(layer_losses):
@@ -242,15 +241,13 @@ def run_one_split(
             print(
                 f"Epoch {epoch:3d} | "
                 f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f} | "
-                f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f} | "
-                f"Test Acc: {test_acc:.4f}"
+                f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}"
             )
 
         # Early stopping on val_loss
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_acc = val_acc
-            best_test_acc = test_acc
             best_epoch = epoch
             patience_counter = 0
 
@@ -261,7 +258,6 @@ def run_one_split(
                     optimizer_state_dict=optimizer.state_dict(),
                     val_loss=val_loss,
                     val_acc=val_acc,
-                    test_acc=test_acc,
                 ),
                 output_dir / "best.pt",
             )
@@ -277,13 +273,11 @@ def run_one_split(
     print(f"  Best epoch: {best_epoch}")
     print(f"  Best val loss: {best_val_loss:.4f}")
     print(f"  Best val acc:  {best_val_acc:.4f}")
-    print(f"  Best test acc: {best_test_acc:.4f}")
 
     return dict(
         best_epoch=best_epoch,
         best_val_loss=best_val_loss,
-        best_val_acc=best_val_acc,
-        best_test_acc=best_test_acc
+        best_val_acc=best_val_acc
     )
 
 
@@ -366,8 +360,8 @@ def train_gnn_classifier_heads(
     print(f"\n{'='*60}")
     print(f"Training complete for {len(split_ids)} split(s)")
     if len(all_results) > 1:
-        avg_test_acc = sum(r['best_test_acc'] for r in all_results) / len(all_results)
-        print(f"Average test accuracy: {avg_test_acc:.4f}")
+        avg_val_acc = sum(r['best_val_acc'] for r in all_results) / len(all_results)
+        print(f"Average validation accuracy: {avg_val_acc:.4f}")
     print(f"{'='*60}\n")
 
 

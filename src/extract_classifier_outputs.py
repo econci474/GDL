@@ -15,6 +15,9 @@ from src.datasets import load_dataset
 from src.models import GCNNet, GATNet, GraphSAGENet
 from src.utils import set_seed, to_device, get_device
 
+# Datasets that use split-based training (10 splits per configuration)
+HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire']
+
 
 def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
     """Factory for models."""
@@ -49,7 +52,7 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
         raise ValueError(f"Unknown model: {model_name}. Use GCN, GAT, GraphSAGE.")
 
 
-def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_type='exponential'):
+def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_type='exponential', split_id=None):
     """
     Extract layer-wise predictions from trained classifier head model.
     
@@ -60,28 +63,30 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
         seed: Random seed
         config: Configuration dictionary
         loss_type: 'exponential' or 'class-weighted'
+        split_id: Optional split ID for heterophilous datasets (0-9)
     """
     set_seed(seed)
     device = get_device()
     
+    split_str = f", split={split_id}" if split_id is not None else ""
     print(f"\n{'='*60}")
     print(f"Extracting classifier outputs: {model_name} on {dataset_name}")
-    print(f"  K={K}, seed={seed}, loss_type={loss_type}")
+    print(f"  K={K}, seed={seed}, loss_type={loss_type}{split_str}")
     print(f"{'='*60}")
     
-    # Load dataset
-    data, num_classes, dataset_kind = load_dataset(
-        dataset_name,
-        root_dir=config.get('root_dir', 'data'),
-        planetoid_normalize=config.get('planetoid_normalize', False),
-        planetoid_split=config.get('planetoid_split', 'public'),
-    )
+    # Load dataset - heterophilous datasets automatically have 2D masks
+    data, num_classes, dataset_kind = load_dataset(dataset_name)
     
     # Create model (same architecture as training)
     model = build_model(model_name, data, num_classes, K, config)
     
-    # Load trained checkpoint
-    checkpoint_path = Path(cfg.classifier_heads_dir) / loss_type / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'best.pt'
+    # Load trained checkpoint (with conditional path for splits)
+    base_path = Path(cfg.classifier_heads_dir) / loss_type / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
+    
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        checkpoint_path = base_path / f'split_{split_id}' / 'best.pt'
+    else:
+        checkpoint_path = base_path / 'best.pt'
     
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -93,10 +98,21 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     
     print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
     print(f"  Val acc: {checkpoint['val_acc']:.4f}")
-    print(f"  Test acc: {checkpoint['test_acc']:.4f}")
     
     # Extract layer-wise predictions
     data = to_device(data, device)
+    
+    # Handle mask dimensions for heterophilous datasets
+    train_mask = data.train_mask
+    val_mask = data.val_mask
+    test_mask = data.test_mask
+    
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        # Extract the specific split column from 2D masks
+        if train_mask.dim() == 2:
+            train_mask = train_mask[:, split_id]
+            val_mask = val_mask[:, split_id]
+            test_mask = test_mask[:, split_id]
     
     with torch.no_grad():
         layer_logits, layer_probs = model.forward_with_classifier_head(data)
@@ -108,21 +124,21 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     # Prepare output dictionary for layer_logits.npz
     logits_dict = {}
     for k, logits_k in enumerate(layer_logits_cpu):
-        # Split by mask
-        train_mask = data.train_mask.cpu().numpy()
-        val_mask = data.val_mask.cpu().numpy()
-        test_mask = data.test_mask.cpu().numpy()
+        # Use processed masks
+        train_mask_cpu = train_mask.cpu().numpy()
+        val_mask_cpu = val_mask.cpu().numpy()
+        test_mask_cpu = test_mask.cpu().numpy()
         
-        logits_dict[f'train_logits_{k}'] = logits_k[train_mask]
-        logits_dict[f'val_logits_{k}'] = logits_k[val_mask]
-        logits_dict[f'test_logits_{k}'] = logits_k[test_mask]
+        logits_dict[f'train_logits_{k}'] = logits_k[train_mask_cpu]
+        logits_dict[f'val_logits_{k}'] = logits_k[val_mask_cpu]
+        logits_dict[f'test_logits_{k}'] = logits_k[test_mask_cpu]
     
     # Prepare output dictionary for layer_probs.npz
     probs_dict = {}
     for k, probs_k in enumerate(layer_probs_cpu):
-        probs_dict[f'train_probs_{k}'] = probs_k[train_mask]
-        probs_dict[f'val_probs_{k}'] = probs_k[val_mask]
-        probs_dict[f'test_probs_{k}'] = probs_k[test_mask]
+        probs_dict[f'train_probs_{k}'] = probs_k[train_mask_cpu]
+        probs_dict[f'val_probs_{k}'] = probs_k[val_mask_cpu]
+        probs_dict[f'test_probs_{k}'] = probs_k[test_mask_cpu]
     
     # Add metadata
     logits_dict['K'] = K
@@ -154,8 +170,7 @@ def main():
     parser.add_argument('--seed', type=str, default='0',
                        help='Random seed or "all" to run all seeds from config')
     parser.add_argument('--loss-type', type=str, default='exponential',
-                        choices=['exponential', 'class-weighted'],
-                        help='Loss type used during training')
+                        help='Loss type directory name (e.g., exponential, class-weighted, ce_plus_R_R1.0_hard, ce_plus_R_R1.0_smooth)')
     parser.add_argument('--root-dir', type=str, default='data',
                         help='Root directory for datasets')
     parser.add_argument('--normalize-planetoid', action='store_true',
@@ -175,20 +190,35 @@ def main():
     # Handle seed argument
     if args.seed.lower() == 'all':
         seeds_to_run = config['seeds']
-        print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
+        print(f"\n Running all seeds: {seeds_to_run}\n")
     else:
         seeds_to_run = [int(args.seed)]
     
     # Extract outputs for each seed
     for seed in seeds_to_run:
-        extract_classifier_outputs(
-            args.dataset,
-            args.model,
-            args.K,
-            seed,
-            config,
-            loss_type=args.loss_type
-        )
+        # Check if dataset uses splits
+        if args.dataset in HETEROPHILOUS_DATASETS:
+            # Process all 10 splits for heterophilous datasets
+            for split_id in range(10):
+                extract_classifier_outputs(
+                    args.dataset,
+                    args.model,
+                    args.K,
+                    seed,
+                    config,
+                    loss_type=args.loss_type,
+                    split_id=split_id
+                )
+        else:
+            # Single extraction for homophilous datasets
+            extract_classifier_outputs(
+                args.dataset,
+                args.model,
+                args.K,
+                seed,
+                config,
+                loss_type=args.loss_type
+            )
         print()  # Add spacing between seeds
 
 

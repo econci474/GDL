@@ -16,6 +16,9 @@ import config as cfg
 from src.metrics import compute_nll, compute_accuracy, entropy_from_probs, compute_entropy_stats
 from src.utils import set_seed, get_device
 
+# Datasets that use split-based training (10 splits per configuration)
+HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire']
+
 
 def train_linear_probe(X_train, y_train, X_val, y_val, num_classes, weight_decay, seed, device, max_epochs=500):
     """
@@ -204,7 +207,7 @@ def probe_at_depth(embeddings, labels, train_mask, val_mask, test_mask, weight_d
     return results, per_node_data
 
 
-def probe_all_depths(dataset_name, model_name, K, seed, config):
+def probe_all_depths(dataset_name, model_name, K, seed, config, split_id=None):
     """
     Probe at all depths k=0..K and save results.
     
@@ -214,16 +217,23 @@ def probe_all_depths(dataset_name, model_name, K, seed, config):
         K: Maximum depth
         seed: Random seed
         config: Configuration dict
+        split_id: Optional split ID for heterophilous datasets (0-9)
     """
     device = get_device()
     
+    split_str = f", split={split_id}" if split_id is not None else ""
     print(f"\n{'='*60}")
-    print(f"Probing: {model_name} on {dataset_name} (K={K}, seed={seed})")
+    print(f"Probing: {model_name} on {dataset_name} (K={K}, seed={seed}{split_str})")
     print(f"Device: {device}")
     print(f"{'='*60}")
     
-    # Load embeddings with K in path
-    embeddings_path = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'embeddings.pt'
+    # Load embeddings with conditional path for splits
+    base_path = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
+    
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        embeddings_path = base_path / f'split_{split_id}' / 'embeddings.pt'
+    else:
+        embeddings_path = base_path / 'embeddings.pt'
     
     if not embeddings_path.exists():
         raise FileNotFoundError(f"Embeddings not found: {embeddings_path}")
@@ -234,6 +244,17 @@ def probe_all_depths(dataset_name, model_name, K, seed, config):
     train_mask = data['train_mask']
     val_mask = data['val_mask']
     test_mask = data['test_mask']
+    
+    # Handle mask dimensions: 2D masks for heterophilous datasets (one column per split)
+    # Homophilous datasets have 1D masks
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        # Extract the specific split column from 2D masks
+        if train_mask.dim() == 2:
+            train_mask = train_mask[:, split_id]
+            val_mask = val_mask[:, split_id]
+            test_mask = test_mask[:, split_id]
+        else:
+            print(f"Warning: Expected 2D masks for heterophilous dataset, got 1D masks")
     
     print(f"Loaded embeddings from {embeddings_path}")
     print(f"Found {len(embeddings_dict)} depths (k=0..{K})")
@@ -279,18 +300,24 @@ def probe_all_depths(dataset_name, model_name, K, seed, config):
             'correct_entropy_mean', 'incorrect_entropy_mean', 'best_weight_decay']
     df = df[cols]
     
-    # Save to tables directory
+    # Save to tables directory with split-specific naming
     output_dir = Path(config['tables_dir'])
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = output_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_probe.csv'
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        output_path = output_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}_probe.csv'
+    else:
+        output_path = output_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_probe.csv'
     df.to_csv(output_path, index=False)
     
     # Save per-node arrays to arrays directory
     arrays_dir = Path(config['results_dir']) / 'arrays'
     arrays_dir.mkdir(parents=True, exist_ok=True)
     
-    arrays_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_pernode.npz'
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        arrays_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}_pernode.npz'
+    else:
+        arrays_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_pernode.npz'
     
     # Add k_list for reference
     per_node_arrays['k_list'] = np.arange(K + 1)
@@ -326,7 +353,14 @@ def main():
     
     # Probe for each seed
     for seed in seeds_to_run:
-        probe_all_depths(args.dataset, args.model, args.K, seed, config)
+        # Check if dataset uses splits
+        if args.dataset in HETEROPHILOUS_DATASETS:
+            # Process all 10 splits for heterophilous datasets
+            for split_id in range(10):
+                probe_all_depths(args.dataset, args.model, args.K, seed, config, split_id=split_id)
+        else:
+            # Single probing for homophilous datasets
+            probe_all_depths(args.dataset, args.model, args.K, seed, config)
         print()  # Add spacing between seeds
 
 

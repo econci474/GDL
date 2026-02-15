@@ -328,60 +328,110 @@ def compute_spearman_correlations(df):
     return correlations
 
 
-def plot_separability_vs_depth(df, summary, output_path):
+def plot_separability_vs_depth(df, df_per_class, num_classes, summary, output_path):
     """
-    Plot separability metrics vs depth.
+    Plot separability metrics vs depth with per-class analysis.
     
     Args:
-        df: DataFrame with metrics
+        df: DataFrame with aggregate metrics
+        df_per_class: DataFrame with per-class metrics
+        num_classes: Number of classes
         summary: Summary dict with k_star values
         output_path: Path to save plot
     """
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
     
     k_values = df['k'].values
     
     # Panel 1: AUROC vs k
     ax = axes[0, 0]
-    ax.plot(k_values, df['val_auroc_err_from_entropy'], 'o-', label='Validation AUROC', color='tab:blue')
-    ax.set_xlabel('Depth k')
-    ax.set_ylabel('AUROC')
-    ax.set_title('Error Detection AUROC vs Depth')
+    ax.plot(k_values, df['val_auroc_err_from_entropy'], 'o-', label='Validation AUROC', color='tab:blue', linewidth=2, markersize=6)
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('AUROC', fontsize=11, fontweight='bold')
+    ax.set_title('Error Detection AUROC vs Depth', fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3)
-    ax.legend()
+    ax.set_ylim([0, 1])
+    ax.axhline(0.5, color='gray', linestyle='--', alpha=0.5, label='Random')
     
     # Panel 2: Cohen's d vs k
     ax = axes[0, 1]
-    ax.plot(k_values, df['val_cohens_d'], 'o-', label="Cohen's d", color='tab:orange')
+    ax.plot(k_values, df['val_cohens_d'], 'o-', label="Cohen's d", color='tab:orange', linewidth=2, markersize=6)
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
-    ax.set_xlabel('Depth k')
-    ax.set_ylabel("Cohen's d")
-    ax.set_title("Entropy Separability (Cohen's d) vs Depth")
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel("Cohen's d", fontsize=11, fontweight='bold')
+    ax.set_title("Entropy Separability (Cohen's d) vs Depth", fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3)
-    ax.legend()
     
     # Panel 3: Validation accuracy vs k
     ax = axes[1, 0]
-    ax.plot(k_values, df['val_acc'], 'o-', label='Validation Accuracy', color='tab:green')
-    ax.set_xlabel('Depth k')
-    ax.set_ylabel('Accuracy')
-    ax.set_title('Validation Accuracy vs Depth')
+    ax.plot(k_values, df['val_acc'], 'o-', label='Validation Accuracy', color='tab:green', linewidth=2, markersize=6)
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Accuracy', fontsize=11, fontweight='bold')
+    ax.set_title('Validation Accuracy vs Depth', fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3)
-    ax.legend()
+    ax.set_ylim([0, 1])
     
     # Panel 4: Entropy AUC for correct vs incorrect
     ax = axes[1, 1]
-    ax.plot(k_values, df['val_entropy_auc_correct'], 'o-', label='Correct Predictions', color='tab:blue')
-    ax.plot(k_values, df['val_entropy_auc_incorrect'], 's-', label='Incorrect Predictions', color='tab:red')
-    ax.set_xlabel('Depth k')
-    ax.set_ylabel('Mean Entropy')
-    ax.set_title('Entropy: Correct vs Incorrect')
+    ax.plot(k_values, df['val_entropy_auc_correct'], 'o-', label='Correct Predictions', color='green', linewidth=2, markersize=6, alpha=0.7)
+    ax.plot(k_values, df['val_entropy_auc_incorrect'], 's-', label='Incorrect Predictions', color='red', linewidth=2, markersize=6, alpha=0.7)
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Mean Entropy', fontsize=11, fontweight='bold')
+    ax.set_title('Mean Entropy: Correct vs Incorrect', fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3)
-    ax.legend()
+    ax.legend(fontsize=10)
     
-    # Mark special k values with vertical lines (add to first subplot only, but show on all)
-    # Add them to the first subplot to establish the labels
-    # Use small offsets to prevent overlapping lines
+    # Panel 5: Per-class validation accuracy
+    ax = axes[2, 0]
+    colors = plt.cm.tab10(np.arange(num_classes))
+    for c in range(num_classes):
+        accuracy_col = f'class_{c}_accuracy'
+        if accuracy_col in df_per_class.columns:
+            ax.plot(df_per_class['k'], df_per_class[accuracy_col], 
+                   'o-', linewidth=1.5, markersize=5, label=f'Class {c}', color=colors[c])
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Per-Class Accuracy', fontsize=11, fontweight='bold')
+    ax.set_title('Per-Class Validation Accuracy by Depth', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim([0, 1.05])
+    # No legend for clarity with many classes
+    
+    # Panel 6: Per-class mean entropy (with detailed legend)
+    ax = axes[2, 1]
+    
+    # Get node counts from last layer for legend
+    last_k = df_per_class['k'].max()
+    last_layer_idx = df_per_class[df_per_class['k'] == last_k].index[0]
+    
+    # Sort classes by total node count for legend ordering
+    class_sizes = []
+    for c in range(num_classes):
+        n_total = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_total'])
+        class_sizes.append((c, n_total))
+    
+    # Sort by n_total (ascending)
+    class_sizes.sort(key=lambda x: x[1])
+    sorted_classes = [c for c, _ in class_sizes]
+    
+    for c in sorted_classes:
+        entropy_col = f'class_{c}_entropy'
+        if entropy_col in df_per_class.columns:
+            # Get counts for this class
+            n_total = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_total'])
+            n_correct = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_correct'])
+            n_wrong = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_wrong'])
+            
+            label = f'C{c} (n={n_total}: {n_correct}✓/{n_wrong}✗)'
+            ax.plot(df_per_class['k'], df_per_class[entropy_col],
+                   'o-', linewidth=1.5, markersize=5, label=label, color=colors[c])
+    
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Per-Class Mean Entropy', fontsize=11, fontweight='bold')
+    ax.set_title('Per-Class Mean Entropy by Depth', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, ncol=1, loc='best')
+    
+    # Mark special k values with vertical lines on first subplot
     ax_first = axes[0, 0]
     
     # k_star_nll (baseline NLL method) - offset left
@@ -403,7 +453,7 @@ def plot_separability_vs_depth(df, summary, output_path):
     ax_first.axvline(x=summary['k_star_sep'] + 0.1, color='red', linestyle='--', 
                alpha=0.7, linewidth=2, label=f'k*_sep={summary["k_star_sep"]}')
     
-    # Now add the same lines to all other subplots (without labels to avoid duplicates)
+    # Add the same lines to all other subplots (without labels to avoid duplicates)
     for ax in axes.flat:
         if ax != ax_first:
             if 'k_star_nll' in summary:
@@ -614,7 +664,7 @@ def plot_aggregated_seeds(dataset, model, K, seeds, config):
     plot_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     plot_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = plot_dir / f'{dataset}_{model}_k{K}_seed_all_separability_vs_k.pdf'
+    output_path = plot_dir / f'{dataset}_{model}_k{K}_seed_all_separability_vs_k.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
     
@@ -684,21 +734,78 @@ def main():
         data = np.load(arrays_path)
         print(f"Loaded per-node arrays from: {arrays_path}")
         
+        # Load dataset to get labels and num_classes
+        from src.datasets import load_dataset as load_ds
+        data_obj, num_classes, _ = load_ds(
+            args.dataset,
+            root_dir='data',
+            planetoid_normalize=False,
+            planetoid_split='public'
+        )
+        
+        labels = data_obj.y.numpy()
+        val_mask = data_obj.val_mask.numpy()
+        test_mask = data_obj.test_mask.numpy()
+        
+        labels_val = labels[val_mask]
+        labels_test = labels[test_mask]
+        
         K = args.K
         
         # Compute separability metrics for each depth
         print(f"\nComputing separability metrics for k=0..{K}...")
         
         separability_metrics = []
+        per_class_metrics = []
+        
         for k in range(K + 1):
             H_val = data[f'H_val_{k}']
             e_val = data[f'e_val_{k}']
             H_test = data[f'H_test_{k}']
             e_test = data[f'e_test_{k}']
             
+            # Load probabilities for per-class metrics
+            p_val = data[f'p_val_{k}']
+            
             metrics = compute_separability_metrics_at_depth(H_val, e_val, H_test, e_test)
             metrics['k'] = k
             separability_metrics.append(metrics)
+            
+            # Compute per-class metrics
+            per_class_data = {'k': k}
+            preds_val = np.argmax(p_val, axis=1)
+            
+            for c in range(num_classes):
+                class_mask = (labels_val == c)
+                n_class_total = class_mask.sum()
+                
+                if n_class_total > 0:
+                    class_preds = preds_val[class_mask]
+                    class_correct = (class_preds == c).astype(int)
+                    class_entropy = H_val[class_mask]
+                    
+                    n_class_correct = class_correct.sum()
+                    n_class_wrong = n_class_total - n_class_correct
+                    
+                    # Per-class accuracy
+                    class_accuracy = class_correct.mean()
+                    
+                    # Per-class mean entropy
+                    class_mean_entropy = class_entropy.mean()
+                    
+                    per_class_data[f'class_{c}_accuracy'] = class_accuracy
+                    per_class_data[f'class_{c}_entropy'] = class_mean_entropy
+                    per_class_data[f'class_{c}_n_total'] = n_class_total
+                    per_class_data[f'class_{c}_n_correct'] = n_class_correct
+                    per_class_data[f'class_{c}_n_wrong'] = n_class_wrong
+                else:
+                    per_class_data[f'class_{c}_accuracy'] = np.nan
+                    per_class_data[f'class_{c}_entropy'] = np.nan
+                    per_class_data[f'class_{c}_n_total'] = 0
+                    per_class_data[f'class_{c}_n_correct'] = 0
+                    per_class_data[f'class_{c}_n_wrong'] = 0
+            
+            per_class_metrics.append(per_class_data)
         
         # Merge with original probe results
         sep_df = pd.DataFrame(separability_metrics)
@@ -760,8 +867,11 @@ def main():
         plot_dir = Path(config['figures_dir']) / args.dataset / args.model / f'K_{args.K}'
         plot_dir.mkdir(parents=True, exist_ok=True)
         
-        plot_path = plot_dir / f'{args.dataset}_{args.model}_k{args.K}_seed{seed}_separability_vs_k.pdf'
-        plot_separability_vs_depth(df_enriched, summary, plot_path)
+        # Convert per-class metrics to DataFrame
+        df_per_class = pd.DataFrame(per_class_metrics)
+        
+        plot_path = plot_dir / f'{args.dataset}_{args.model}_k{args.K}_seed{seed}_separability_vs_k.png'
+        plot_separability_vs_depth(df_enriched, df_per_class, num_classes, summary, plot_path)
         
         print(f"\n{'='*60}")
         print(f"[DONE] Separability analysis complete for seed {seed}!")

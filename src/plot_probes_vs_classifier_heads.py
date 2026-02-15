@@ -14,13 +14,14 @@ import config as cfg
 
 
 def load_probe_results(dataset, model, K, seed):
-    """Load linear probe results."""
-    probe_path = Path(cfg.runs_dir) / dataset / model / f'seed_{seed}' / f'K_{K}' / 'probe_results.pt'
+    """Load linear probe results from .npz file."""
+    # Load from arrays directory which contains per-node probabilities
+    probe_path = Path(cfg.results_dir) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}_pernode.npz'
     
     if not probe_path.exists():
         raise FileNotFoundError(f"Probe results not found: {probe_path}")
     
-    return torch.load(probe_path)
+    return np.load(probe_path)
 
 
 def load_classifier_outputs(dataset, model, K, seed, loss_type='exponential'):
@@ -95,7 +96,7 @@ def plot_probes_vs_classifier_heads(dataset, model, K, seed, loss_type='exponent
     try:
         probe_results = load_probe_results(dataset, model, K, seed)
     except FileNotFoundError as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         print("  Please run probing first: python -m src.probe --dataset {dataset} --model {model} --K {K} --seed {seed}")
         return
     
@@ -103,7 +104,7 @@ def plot_probes_vs_classifier_heads(dataset, model, K, seed, loss_type='exponent
     try:
         logits_data, probs_data = load_classifier_outputs(dataset, model, K, seed, loss_type)
     except FileNotFoundError as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         print(f"  Please extract classifier outputs first:")
         print(f"  python -m src.extract_classifier_outputs --dataset {dataset} --model {model} --K {K} --seed {seed} --loss-type {loss_type}")
         return
@@ -119,26 +120,14 @@ def plot_probes_vs_classifier_heads(dataset, model, K, seed, loss_type='exponent
     for k in range(num_layers):
         ax = fig.add_subplot(gs[k, 0])
         
-        # Get probe probabilities for this layer
-        # Assuming probe_results has format: {0: {C: {...}}, 1: {C: {...}}, ...}
-        # We need to extract probabilities from the best C value
-        if k in probe_results:
-            # Find best probe result (assuming they're stored with different C values)
-            layer_probes = probe_results[k]
-            # Get the probe with best validation performance (or use a default C)
-            # For simplicity, use the first available C value
-            best_C = list(layer_probes.keys())[0]
-            probe_data = layer_probes[best_C]
-            
-            # Get probabilities for the split
-            if f'{split}_probs' in probe_data:
-                probe_probs = probe_data[f'{split}_probs']
-            else:
-                print(f"  Warning: No probe probabilities found for layer {k}, skipping")
-                continue
-        else:
-            print(f"  Warning: No probe results for layer {k}, skipping")
+        # Get probe probabilities for this layer from .npz file
+        # Keys in the .npz file are like: 'p_val_0', 'p_test_0', etc.
+        probe_key = f'p_{split}_{k}'
+        if probe_key not in probe_results:
+            print(f"  Warning: No probe probabilities found for layer {k} (key: {probe_key}), skipping")
             continue
+        
+        probe_probs = probe_results[probe_key]
         
         # Get classifier head probabilities for this layer
         classifier_probs = probs_data[f'{split}_probs_{k}']
@@ -161,7 +150,7 @@ def plot_probes_vs_classifier_heads(dataset, model, K, seed, loss_type='exponent
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Plot saved to: {output_path}\n")
+    print(f"Plot saved to: {output_path}\n")
 
 
 def main():

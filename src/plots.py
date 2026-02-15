@@ -68,12 +68,12 @@ def plot_accuracy_vs_depth(dataset_name, model_name, K, config, seeds=None):
     
     output_dir = Path(config['figures_dir']) / dataset_name / model_name / f'K_{K}'
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_accuracy_vs_depth.pdf'
+    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_accuracy_vs_depth.png'
     output_file.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"Saved: {output_file}")
 
 
 def plot_entropy_vs_depth(dataset_name, model_name, K, config, seeds=None):
@@ -87,7 +87,7 @@ def plot_entropy_vs_depth(dataset_name, model_name, K, config, seeds=None):
     all_test_entropy = []
     
     # Get dataset info for node counts
-    data = load_dataset(dataset_name)
+    data, _, _ = load_dataset(dataset_name)
     n_val_nodes = data.val_mask.sum().item()
     n_test_nodes = data.test_mask.sum().item()
     
@@ -101,7 +101,7 @@ def plot_entropy_vs_depth(dataset_name, model_name, K, config, seeds=None):
         all_test_entropy.append(df['test_entropy_mean'].values)
     
     if len(all_val_entropy) == 0:
-        print(f"⚠ No data found for {dataset_name} {model_name}")
+        print(f"No data found for {dataset_name} {model_name}")
         return
     
     depths = df['k'].values
@@ -126,11 +126,11 @@ def plot_entropy_vs_depth(dataset_name, model_name, K, config, seeds=None):
     
     output_dir = Path(config['figures_dir']) / dataset_name / model_name / f'K_{K}'
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_entropy_vs_depth.pdf'
+    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_entropy_vs_depth.png'
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"Saved: {output_file}")
 
 
 def plot_nll_vs_depth(dataset_name, model_name, K, config, seeds=None):
@@ -156,7 +156,7 @@ def plot_nll_vs_depth(dataset_name, model_name, K, config, seeds=None):
         all_k_star.append(k_star)
     
     if len(all_val_nll) == 0:
-        print(f"⚠ No data found for {dataset_name} {model_name}")
+        print(f"No data found for {dataset_name} {model_name}")
         return
     
     depths = df['k'].values
@@ -180,11 +180,11 @@ def plot_nll_vs_depth(dataset_name, model_name, K, config, seeds=None):
     
     output_dir = Path(config['figures_dir']) / dataset_name / model_name / f'K_{K}'
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_nll_vs_depth.pdf'
+    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_nll_vs_depth.png'
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"Saved: {output_file}")
 
 
 def plot_correct_incorrect_entropy(dataset_name, model_name, K, config, seeds=None):
@@ -197,7 +197,7 @@ def plot_correct_incorrect_entropy(dataset_name, model_name, K, config, seeds=No
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    data = load_dataset(dataset_name)
+    data, _, _ = load_dataset(dataset_name)
     test_mask = data.test_mask.numpy()
     y_test = data.y[test_mask].numpy()
     n_test = test_mask.sum()
@@ -228,7 +228,7 @@ def plot_correct_incorrect_entropy(dataset_name, model_name, K, config, seeds=No
         all_n_incorrect.append(n_incorrect)
     
     if len(all_correct_entropy) == 0:
-        print(f"⚠ No data found for {dataset_name} {model_name}")
+        print(f"No data found for {dataset_name} {model_name}")
         return
     
     depths = df['k'].values
@@ -260,11 +260,11 @@ def plot_correct_incorrect_entropy(dataset_name, model_name, K, config, seeds=No
     
     output_dir = Path(config['figures_dir']) / dataset_name / model_name / f'K_{K}'
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_correct_incorrect_entropy_vs_depth.pdf'
+    output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_correct_incorrect_entropy_vs_depth.png'
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"Saved: {output_file}")
 
 
 def plot_depth_selection_comparison(dataset_name, model_name, config):
@@ -272,7 +272,7 @@ def plot_depth_selection_comparison(dataset_name, model_name, config):
     summary_file = Path(config['tables_dir']) / f'summary_{dataset_name}_{model_name}.csv'
     
     if not summary_file.exists():
-        print(f"⚠ Summary file not found: {summary_file}")
+        print(f"Summary file not found: {summary_file}")
         return
     
     summary_df = pd.read_csv(summary_file)
@@ -332,11 +332,11 @@ def plot_depth_selection_comparison(dataset_name, model_name, config):
     fig.suptitle(f'Depth Selection Comparison: {dataset_name} - {model_name}', 
                  fontsize=15, fontweight='bold', y=1.02)
     
-    output_file = Path(config['figures_dir']) / f'{dataset_name}_{model_name}_depth_selection_comparison.pdf'
+    output_file = Path(config['figures_dir']) / f'{dataset_name}_{model_name}_depth_selection_comparison.png'
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"Saved: {output_file}")
 
 
 def main():
@@ -391,7 +391,7 @@ def main():
         plot_depth_selection_comparison(args.dataset, args.model, config)
     
     print(f"\n{'='*60}")
-    print(f"✓ All plots generated!")
+    print(f"All plots generated!")
     print(f"  Output directory: {config['figures_dir']}")
     print(f"{'='*60}\n")
 

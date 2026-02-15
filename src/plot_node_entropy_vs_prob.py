@@ -49,7 +49,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
     
     # Load dataset to get true labels
     from src.datasets import load_dataset
-    graph_data = load_dataset(dataset)
+    graph_data, _, _ = load_dataset(dataset)  # Returns (data, num_classes, dataset_kind)
     labels = graph_data.y.numpy()
     num_classes = len(np.unique(labels))
     
@@ -133,13 +133,13 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}_{split}_entropy_vs_prob.pdf'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}_{split}_entropy_vs_prob.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
 
 
-def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val'):
+def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated'):
     """
     Create aggregated scatter plot with mean probabilities and entropies across seeds.
     
@@ -153,7 +153,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     """
     # Load dataset to get true labels
     from src.datasets import load_dataset
-    graph_data = load_dataset(dataset)
+    graph_data, _, _ = load_dataset(dataset)
     labels = graph_data.y.numpy()
     num_classes = len(np.unique(labels))
     
@@ -193,22 +193,46 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         print("Error: No valid data found across seeds")
         return
     
-    # Create figure with subplots
+    # Calculate class mean trajectories for summary panel
+    class_mean_entropy = {}  # k -> array of shape [num_classes]
+    class_mean_p_correct = {}  # k -> array of shape [num_classes]
+    
+    for k in k_list:
+        if k not in all_probs or len(all_probs[k]) == 0:
+            continue
+        
+        mean_probs = np.mean(all_probs[k], axis=0)
+        H = entropy_from_probs(mean_probs)
+        p_correct = mean_probs[np.arange(len(mean_probs)), plot_labels]
+        
+        # Compute mean per class
+        class_H = np.zeros(num_classes)
+        class_P = np.zeros(num_classes)
+        for c in range(num_classes):
+            class_mask = plot_labels == c
+            if class_mask.sum() > 0:
+                class_H[c] = H[class_mask].mean()
+                class_P[c] = p_correct[class_mask].mean()
+        
+        class_mean_entropy[k] = class_H
+        class_mean_p_correct[k] = class_P
+    
+    # Create figure with an extra row for trajectory summary
     num_depths = len(k_list)
     ncols = min(3, num_depths)
-    nrows = int(np.ceil(num_depths / ncols))
+    nrows = int(np.ceil(num_depths / ncols)) + 1  # +1 for trajectory panel
     
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
-    if num_depths == 1:
-        axes = np.array([axes])
-    axes = axes.flatten()
+    fig = plt.figure(figsize=(5*ncols, 4*nrows))
+    gs = fig.add_gridspec(nrows, ncols, hspace=0.4, wspace=0.3)
     
     # Color map for classes
     colors = plt.cm.tab10(np.linspace(0, 1, num_classes))
     
-    # Plot each depth
+    # Plot individual depth scatters
     for idx, k in enumerate(k_list):
-        ax = axes[idx]
+        row = idx // ncols
+        col = idx % ncols
+        ax = fig.add_subplot(gs[row, col])
         
         if k not in all_probs or len(all_probs[k]) == 0:
             print(f"Warning: No data for k={k}, skipping")
@@ -238,9 +262,9 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
                           c=[colors[c]], label=label, 
                           alpha=0.6, s=20, edgecolors='none')
         
-        ax.set_xlabel('Mean Predictive Entropy')
-        ax.set_ylabel('Mean P(Correct Class)')
-        ax.set_title(f'Depth k={k}')
+        ax.set_xlabel('Mean Entropy', fontsize=10)
+        ax.set_ylabel('Mean P(Correct)', fontsize=10)
+        ax.set_title(f'Depth k={k}', fontweight='bold')
         ax.grid(True, alpha=0.3)
         ax.set_xlim(left=0)
         ax.set_ylim(0, 1)
@@ -249,20 +273,58 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         if idx == 0:
             ax.legend(loc='best', fontsize=8, framealpha=0.9)
     
-    # Hide unused subplots
-    for idx in range(num_depths, len(axes)):
-        axes[idx].axis('off')
+    # Add trajectory summary panel spanning bottom row
+    ax_traj = fig.add_subplot(gs[-1, :])
     
-    plt.suptitle(f'{dataset}/{model} (K={K}, seeds={seeds}, {split} set):\n'
+    # Plot trajectories for each class
+    for c in range(num_classes):
+        entropy_vals = [class_mean_entropy[k][c] for k in k_list if k in class_mean_entropy]
+        p_correct_vals = [class_mean_p_correct[k][c] for k in k_list if k in class_mean_p_correct]
+        
+        if len(entropy_vals) > 0:
+            # Draw connecting line
+            ax_traj.plot(entropy_vals, p_correct_vals, '-', color=colors[c], 
+                        alpha=0.5, linewidth=2, zorder=1)
+            
+            # Draw points for each depth
+            for i, k in enumerate(k_list):
+                if k in class_mean_entropy:
+                    ax_traj.scatter(entropy_vals[i], p_correct_vals[i], 
+                                  c=[colors[c]], s=100, edgecolors='black', 
+                                  linewidth=1.5, zorder=2, alpha=0.8)
+                    # Annotate with k value
+                    if i == len(entropy_vals) - 1:  # Only label last point
+                        ax_traj.annotate(f'C{c}', (entropy_vals[i], p_correct_vals[i]),
+                                       xytext=(5, 5), textcoords='offset points',
+                                       fontsize=9, fontweight='bold', color=colors[c])
+    
+    ax_traj.set_xlabel('Mean Entropy', fontsize=12, fontweight='bold')
+    ax_traj.set_ylabel('Mean P(Correct Class)', fontsize=12, fontweight='bold')
+    ax_traj.set_title('Class Trajectory Summary (k=0 ? K)', fontsize=13, fontweight='bold')
+    ax_traj.grid(True, alpha=0.3)
+    ax_traj.set_xlim(left=0)
+    ax_traj.set_ylim(0, 1)
+    
+    # Add arrow showing direction
+    ax_traj.annotate('', xy=(0.95, 0.05), xytext=(0.85, 0.05),
+                    xycoords='axes fraction', textcoords='axes fraction',
+                    arrowprops=dict(arrowstyle='->', lw=2, color='gray'))
+    ax_traj.text(0.90, 0.08, 'Increasing\nDepth', transform=ax_traj.transAxes,
+                ha='center', fontsize=10, color='gray', style='italic')
+    
+    plt.suptitle(f'{dataset}/{model} (K={K}, seeds={seeds}, {split} set):\\n'
                  f'Per-Node Mean Entropy vs Mean Correct-Class Probability',
-                 fontsize=14, y=1.00)
-    plt.tight_layout()
+                 fontsize=14, y=0.995)
     
     # Save figure
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
+    if seed_mode == 'custom':
+        # Create not_seed_2 subfolder for custom seed lists
+        figures_dir = figures_dir / 'not_seed_2'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all_{split}_entropy_vs_prob.pdf'
+    seed_str = '_'.join(map(str, seeds)) if seed_mode == 'custom' else 'all'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_{seed_str}_{split}_entropy_vs_prob_with_trajectories.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
@@ -292,7 +354,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
     
     # Load dataset to get true labels
     from src.datasets import load_dataset
-    graph_data = load_dataset(dataset)
+    graph_data, _, _ = load_dataset(dataset)
     labels = graph_data.y.numpy()
     
     # Determine which nodes to plot
@@ -383,13 +445,13 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}_{split}_entropy_vs_correctness.pdf'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
 
 
-def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, split='val'):
+def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated'):
     """
     Create aggregated correctness plot: average probs across seeds, then classify by argmax.
     
@@ -403,7 +465,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     """
     # Load dataset to get true labels
     from src.datasets import load_dataset
-    graph_data = load_dataset(dataset)
+    graph_data, _, _ = load_dataset(dataset)
     labels = graph_data.y.numpy()
     
     # Determine which nodes to plot
@@ -518,9 +580,13 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     
     # Save figure
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
+    if seed_mode == 'custom':
+        # Create not_seed_2 subfolder for custom seed lists
+        figures_dir = figures_dir / 'not_seed_2'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all_{split}_entropy_vs_correctness.pdf'
+    seed_str = '_'.join(map(str, seeds)) if seed_mode == 'custom' else 'all'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_{seed_str}_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
@@ -531,7 +597,7 @@ def main():
     parser.add_argument('--dataset', type=str, default='Cora')
     parser.add_argument('--model', type=str, default='GCN')
     parser.add_argument('--K', type=int, default=8)
-    parser.add_argument('--seed', type=str, default='0', help='Seed or "all" for aggregated plot')
+    parser.add_argument('--seed', type=str, default='0', help='Seed, "all", or comma-separated list like "0,1,3"')
     parser.add_argument('--split', type=str, default='val', choices=['val', 'test'])
     parser.add_argument('--plot_type', type=str, default='probability', 
                        choices=['probability', 'correctness'],
@@ -542,38 +608,47 @@ def main():
     # Convert config to dict
     config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}
     
+    # Parse seeds
+    if args.seed.lower() == 'all':
+        seeds = config['seeds']
+        seed_mode = 'aggregated'
+    elif ',' in args.seed:
+        # Custom seed list like "0,1,3"
+        seeds = [int(s.strip()) for s in args.seed.split(',')]
+        seed_mode = 'custom'
+    else:
+        # Single seed
+        seed = int(args.seed)
+        seeds = None
+        seed_mode = 'single'
+    
     if args.plot_type == 'correctness':
         # Correctness plot (binary: correct/incorrect)
-        if args.seed.lower() == 'all':
-            # Aggregated correctness: average probs, then classify
-            seeds = config['seeds']
-            print(f"Creating aggregated entropy vs correctness plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seeds={seeds}, split={args.split}")
-            plot_entropy_vs_correctness_aggregated(args.dataset, args.model, args.K, seeds, config, args.split)
-        else:
-            # Single seed correctness
-            seed = int(args.seed)
+        if seed_mode == 'single':
             print(f"Creating entropy vs correctness plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seed={seed}, split={args.split}")
             plot_entropy_vs_correctness(args.dataset, args.model, args.K, seed, config, args.split)
+        else:
+            # Aggregated across seeds
+            print(f"Creating aggregated entropy vs correctness plot for {args.dataset}/{args.model}")
+            print(f"K={args.K}, seeds={seeds}, split={args.split}")
+            plot_entropy_vs_correctness_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode)
         
     else:
         # Probability plot (per-class)
-        if args.seed.lower() == 'all':
-            # Aggregated plot across all seeds
-            seeds = config['seeds']
-            print(f"Creating aggregated entropy vs probability plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seeds={seeds}, split={args.split}")
-            plot_entropy_vs_prob_aggregated(args.dataset, args.model, args.K, seeds, config, args.split)
-        else:
-            # Single seed plot
-            seed = int(args.seed)
+        if seed_mode == 'single':
             print(f"Creating entropy vs probability plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seed={seed}, split={args.split}")
             plot_entropy_vs_prob(args.dataset, args.model, args.K, seed, config, args.split)
+        else:
+            # Aggregated plot across seeds
+            print(f"Creating aggregated entropy vs probability plot for {args.dataset}/{args.model}")
+            print(f"K={args.K}, seeds={seeds}, split={args.split}")
+            plot_entropy_vs_prob_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode)
     
     print("\nDone!")
 
 
 if __name__ == '__main__':
     main()
+

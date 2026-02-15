@@ -108,7 +108,7 @@ def plot_training_comparison(dataset_name, model_name, K_max, k_star, config, se
     # Save with NEW structure: dataset/model/K_max/
     output_dir = Path(config['figures_dir']) / dataset_name / model_name / f'K_{K_max}'
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f'{dataset_name}_{model_name}_k{K_max}_training_comparison_vs_k{k_star}.pdf'
+    output_file = output_dir / f'{dataset_name}_{model_name}_k{K_max}_training_comparison_vs_k{k_star}.png'
     
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)

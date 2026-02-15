@@ -13,8 +13,11 @@ from src.datasets import load_dataset
 from src.models import GCNNet, GATNet
 from src.utils import set_seed, to_device, get_device
 
+# Datasets that use split-based training (10 splits per configuration)
+HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire']
 
-def extract_embeddings(dataset_name, model_name, K, seed, config):
+
+def extract_embeddings(dataset_name, model_name, K, seed, config, split_id=None):
     """
     Extract layer-wise embeddings from a trained model.
     
@@ -24,16 +27,21 @@ def extract_embeddings(dataset_name, model_name, K, seed, config):
         K: Number of layers
         seed: Random seed
         config: Configuration dictionary
+        split_id: Optional split ID for heterophilous datasets (0-9)
     """
     set_seed(seed)
     device = get_device()
     
+    split_str = f", split={split_id}" if split_id is not None else ""
     print(f"\n{'='*60}")
-    print(f"Extracting embeddings: {model_name} on {dataset_name} (K={K}, seed={seed})")
+    print(f"Extracting embeddings: {model_name} on {dataset_name} (K={K}, seed={seed}{split_str})")
     print(f"{'='*60}")
     
-    # Load dataset
-    data = load_dataset(dataset_name)
+    # Load dataset (with split ID for heterophilous datasets)
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        data = load_dataset(dataset_name, split_idx=split_id)
+    else:
+        data = load_dataset(dataset_name)
     
     # Create model (same architecture as training)
     if model_name == 'GCN':
@@ -65,8 +73,13 @@ def extract_embeddings(dataset_name, model_name, K, seed, config):
     else:
         raise ValueError(f"Unknown model: {model_name}")
     
-    # Load trained checkpoint
-    checkpoint_path = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'best.pt'
+    # Load trained checkpoint (with conditional path for splits)
+    base_path = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
+    
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        checkpoint_path = base_path / f'split_{split_id}' / 'best.pt'
+    else:
+        checkpoint_path = base_path / 'best.pt'
     
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -133,7 +146,14 @@ def main():
     
     # Extract embeddings for each seed
     for seed in seeds_to_run:
-        extract_embeddings(args.dataset, args.model, args.K, seed, config)
+        # Check if dataset uses splits
+        if args.dataset in HETEROPHILOUS_DATASETS:
+            # Process all 10 splits for heterophilous datasets
+            for split_id in range(10):
+                extract_embeddings(args.dataset, args.model, args.K, seed, config, split_id=split_id)
+        else:
+            # Single extraction for homophilous datasets
+            extract_embeddings(args.dataset, args.model, args.K, seed, config)
         print()  # Add spacing between seeds
 
 
