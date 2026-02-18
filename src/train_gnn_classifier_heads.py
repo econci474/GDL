@@ -132,13 +132,16 @@ def select_split_masks(data, split_id: int):
 
 def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
     """Factory for models."""
+    dropout_input  = config.get("dropout_input")
+    dropout_middle = config.get("dropout_middle")
     if model_name == "GCN":
         return GCNNet(
             num_features=data.num_features,
             hidden_dim=config["hidden_dim"],
             num_classes=num_classes,
             K=K,
-            dropout=None,
+            dropout_input=dropout_input,
+            dropout_middle=dropout_middle,
             normalize=True,
         )
     elif model_name == "GAT":
@@ -148,7 +151,8 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
             num_classes=num_classes,
             K=K,
             heads=config.get("gat_heads", 8),
-            dropout=None,
+            dropout_input=dropout_input,
+            dropout_middle=dropout_middle,
         )
     elif model_name == "GraphSAGE":
         return GraphSAGENet(
@@ -157,7 +161,8 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
             num_classes=num_classes,
             K=K,
             aggr=config.get("sage_aggr", "mean"),
-            dropout=None,
+            dropout_input=dropout_input,
+            dropout_middle=dropout_middle,
         )
     else:
         raise ValueError(f"Unknown model: {model_name}. Use GCN, GAT, GraphSAGE.")

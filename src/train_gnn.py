@@ -69,13 +69,16 @@ def select_split_masks(data, split_id: int):
 
 def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
     """Factory for models."""
+    dropout_input  = config.get("dropout_input")
+    dropout_middle = config.get("dropout_middle")
     if model_name == "GCN":
         return GCNNet(
             num_features=data.num_features,
             hidden_dim=config["hidden_dim"],
             num_classes=num_classes,
             K=K,
-            dropout=None,
+            dropout_input=dropout_input,
+            dropout_middle=dropout_middle,
             normalize=True,
         )
     elif model_name == "GAT":
@@ -85,7 +88,8 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
             num_classes=num_classes,
             K=K,
             heads=config.get("gat_heads", 8),
-            dropout=None,
+            dropout_input=dropout_input,
+            dropout_middle=dropout_middle,
         )
     elif model_name == "GraphSAGE":
         return GraphSAGENet(
@@ -94,7 +98,8 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
             num_classes=num_classes,
             K=K,
             aggr=config.get("sage_aggr", "mean"),
-            dropout=None,
+            dropout_input=dropout_input,
+            dropout_middle=dropout_middle,
         )
     else:
         raise ValueError(f"Unknown model: {model_name}. Use GCN, GAT, GraphSAGE.")
@@ -106,6 +111,7 @@ def run_one_split(
     model_name: str,
     K: int,
     seed: int,
+    split_id: int,
     config: dict,
     data_split,
     num_classes: int,
@@ -150,8 +156,10 @@ def run_one_split(
                 val_acc=val_acc,
                 # Hyperparameter metadata
                 lr=config["lr"],
+                weight_decay=config["weight_decay"],
                 patience=config["patience"],
                 max_epochs=config["max_epochs"],
+                hidden_dim=config["hidden_dim"],
                 K=K,
             )
         )
@@ -177,6 +185,14 @@ def run_one_split(
                     optimizer_state_dict=optimizer.state_dict(),
                     val_loss=val_loss,
                     val_acc=val_acc,
+                    hyperparams=dict(
+                        lr=config["lr"],
+                        weight_decay=config["weight_decay"],
+                        patience=config["patience"],
+                        max_epochs=config["max_epochs"],
+                        hidden_dim=config["hidden_dim"],
+                        K=K,
+                    ),
                 ),
                 output_dir / "best.pt",
             )
@@ -275,13 +291,31 @@ def train_gnn(dataset_name: str, model_name: str, K: int, seed: int, args, confi
             model_name=model_name,
             K=K,
             seed=seed,
+            split_id=split_id,
             config=config,
             data_split=data_split,
             num_classes=num_classes,
             output_dir=output_dir,
         )
-        r["split_id"] = split_id
         results.append(r)
+
+        # Append to sweep results tracker
+        try:
+            from src.results_tracker import append_result
+            append_result(dict(
+                dataset=dataset_name, model=model_name,
+                loss_type='ce_only', K=K, seed=seed, split=split_id,
+                lr=config["lr"], weight_decay=config["weight_decay"],
+                patience=config["patience"], max_epochs=config["max_epochs"],
+                hidden_dim=config["hidden_dim"],
+                beta=None, lambda_r=None, entropy_floor=None,
+                per_class_r=None, band_lower=None, band_upper=None,
+                best_epoch=r["best_epoch"],
+                best_val_loss=r["best_val_loss"],
+                best_val_acc=r["best_val_acc"],
+            ))
+        except ImportError:
+            pass  # results_tracker optional
 
     # If multiple splits were run, summarize mean±std
     if len(results) > 1:
@@ -300,61 +334,61 @@ def train_gnn(dataset_name: str, model_name: str, K: int, seed: int, args, confi
 def main():
     import sys
     from pathlib import Path
-    # Add project root to path to import config
     sys.path.insert(0, str(Path(__file__).parent.parent))
     import config as cfg
-    
+
     parser = argparse.ArgumentParser(description='Train GNN model')
-    parser.add_argument('--dataset', type=str, required=True,
-                       help='Dataset name (Cora, PubMed, Roman-empire, Minesweeper)')
-    parser.add_argument('--model', type=str, required=True,
-                       help='Model name (GCN, GAT, GraphSAGE)')
-    parser.add_argument('--K', type=int, default=8,
-                       help='Number of layers')
+    parser.add_argument('--dataset', type=str, required=True)
+    parser.add_argument('--model', type=str, required=True)
+    parser.add_argument('--K', type=int, default=8)
     parser.add_argument('--seed', type=str, default='0',
-                       help='Random seed or "all" to run all seeds from config')
-    
-    #Root directory for datasets loader
-    parser.add_argument("--root-dir", type=str, default="data",
-                        help="Root directory for dataset downloads/cache")
+                        help='Random seed or "all" to run all seeds from config')
+    parser.add_argument('--root-dir', type=str, default='data')
+    parser.add_argument('--planetoid-split', type=str, default='public',
+                        choices=['public', 'full', 'random'])
+    parser.add_argument('--normalize-planetoid', action='store_true', default=True)
+    parser.add_argument('--no-normalize-planetoid', dest='normalize_planetoid', action='store_false')
+    parser.add_argument('--split-mode', type=str, default='auto',
+                        choices=['auto', 'all', 'first', 'index'])
+    parser.add_argument('--split-id', type=int, default=0)
 
-    # Choose Planetoid split protocol
-    parser.add_argument("--planetoid-split", type=str, default="public",
-                        choices=["public", "full", "random"],
-                        help="Planetoid split protocol for Cora/PubMed")
-
-    # Normalization toggles
-    parser.add_argument("--normalize-planetoid", action="store_true", default=True,
-                        help="Apply NormalizeFeatures() to Cora/PubMed (default: True)")
-    parser.add_argument("--no-normalize-planetoid", dest="normalize_planetoid", action="store_false",
-                        help="Disable NormalizeFeatures() for Cora/PubMed")
-
-    # Split handling for heterophilous datasets
-    parser.add_argument("--split-mode", type=str, default="auto",
-                        choices=["auto", "all", "first", "index"],
-                        help=(
-                            "How to handle multi-split masks: "
-                            "auto (all splits if available), all, first (split 0), index (use --split-id)"
-                        ))
-    parser.add_argument("--split-id", type=int, default=0,
-                        help="Which split column to use if --split-mode index")
+    # Hyperparameter overrides
+    parser.add_argument('--lr', type=float, default=None)
+    parser.add_argument('--weight-decay', type=float, default=None)
+    parser.add_argument('--patience', type=int, default=None)
+    parser.add_argument('--max-epochs', type=int, default=None)
+    parser.add_argument('--hidden-dim', type=int, default=None)
 
     args = parser.parse_args()
-    
-    # Convert config module to dict
+
+    # Build config from module, apply dataset-type defaults, then CLI overrides
     config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}
-    
-    # Handle seed argument
+
+    if args.dataset in cfg.homophilous_datasets:
+        config.update(cfg.defaults_homophilous)
+    elif args.dataset in cfg.heterophilous_datasets:
+        config.update(cfg.defaults_heterophilous)
+
+    cli_overrides = {
+        'lr':           args.lr,
+        'weight_decay': args.weight_decay,
+        'patience':     args.patience,
+        'max_epochs':   args.max_epochs,
+        'hidden_dim':   args.hidden_dim,
+    }
+    for key, val in cli_overrides.items():
+        if val is not None:
+            config[key] = val
+
     if args.seed.lower() == 'all':
         seeds_to_run = config['seeds']
         print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
     else:
         seeds_to_run = [int(args.seed)]
-    
-    # Train model for each seed
+
     for seed in seeds_to_run:
         train_gnn(args.dataset, args.model, args.K, seed, args, config)
-        print()  # Add spacing between seeds
+        print()
 
 
 if __name__ == '__main__':
