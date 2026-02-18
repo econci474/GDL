@@ -31,6 +31,13 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 import config as cfg
 
+# Try to import pandas for skip-existing (optional)
+try:
+    import pandas as pd
+    _PANDAS_AVAILABLE = True
+except ImportError:
+    _PANDAS_AVAILABLE = False
+
 ALL_LOSS_TYPES = ["ce_only", "weighted_ce", "ce_plus_R", "weighted_ce_plus_R", "R_only"]
 # Loss types that need entropy-specific hyperparams
 ENTROPY_LOSS_TYPES = {"ce_plus_R", "weighted_ce_plus_R", "R_only"}
@@ -96,6 +103,36 @@ def build_entropy_grid(dataset: str, loss_type: str) -> list[dict]:
     return all_combos
 
 
+def load_completed_runs(results_csv: Path) -> set:
+    """Load set of completed run signatures from sweep_results.csv."""
+    if not _PANDAS_AVAILABLE or not results_csv.exists():
+        return set()
+    try:
+        df = pd.read_csv(results_csv)
+        completed = set()
+        key_cols = ['dataset', 'model', 'loss_type', 'K', 'seed', 'split',
+                    'lr', 'weight_decay', 'hidden_dim']
+        # Only use columns that exist
+        key_cols = [c for c in key_cols if c in df.columns]
+        for _, row in df.iterrows():
+            sig = tuple(str(row[c]) for c in key_cols)
+            completed.add(sig)
+        print(f'[resume] Loaded {len(completed)} completed runs from {results_csv}')
+        return completed
+    except Exception as e:
+        print(f'[resume] Warning: could not load {results_csv}: {e}')
+        return set()
+
+
+def make_run_signature(cmd: list, key_args: list) -> tuple:
+    """Extract key argument values from a command list to form a run signature."""
+    vals = {}
+    for i, token in enumerate(cmd):
+        if token in key_args and i + 1 < len(cmd):
+            vals[token] = cmd[i + 1]
+    return tuple(vals.get(k, '') for k in key_args)
+
+
 def run_training(cmd: list[str], dry_run: bool = False) -> int:
     """Run a training command as subprocess. Returns returncode."""
     print(f"\n>>> {' '.join(cmd)}")
@@ -125,6 +162,8 @@ def main():
                         help="Split mode for heterophilous datasets (default: first)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print commands without executing them")
+    parser.add_argument("--skip-existing", action="store_true",
+                        help="Skip runs already present in sweep_results.csv (for resuming)")
     parser.add_argument("--python", type=str, default=sys.executable,
                         help="Python executable to use")
     args = parser.parse_args()
@@ -144,7 +183,13 @@ def main():
     print(f"  K values:   {K_values}")
     print(f"  Seeds:      {seeds}")
     print(f"  Split mode: {args.split_mode}")
+    print(f"  Skip existing: {args.skip_existing}")
     print(f"{'='*60}\n")
+
+    # Load completed runs for resume support
+    sweep_csv = ROOT / 'results' / 'sweep_results.csv'
+    completed_runs = load_completed_runs(sweep_csv) if args.skip_existing else set()
+    skipped = 0
 
     total_runs = 0
     failed_runs = []
@@ -202,6 +247,15 @@ def main():
                                 cmd += ["--band-lower", str(hp["band_lower"])]
                             if "band_upper" in hp:
                                 cmd += ["--band-upper", str(hp["band_upper"])]
+
+                            # Check if already completed (resume support)
+                            if args.skip_existing and completed_runs:
+                                sig_keys = ['--dataset', '--model', '--loss-type',
+                                            '--K', '--seed', '--lr', '--weight-decay', '--hidden-dim']
+                                sig = make_run_signature(cmd, sig_keys)
+                                if sig in completed_runs:
+                                    skipped += 1
+                                    continue
 
                             rc = run_training(cmd, dry_run=args.dry_run)
                             total_runs += 1

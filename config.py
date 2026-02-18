@@ -44,7 +44,7 @@ defaults_heterophilous = {
 sweep_homophilous = {
     'hidden_dim':   [16, 64],
     'lr':           [0.01, 0.005],
-    'weight_decay': [0.0, 1e-4, 5e-4],
+    'weight_decay': [0.0, 5e-4],
     'max_epochs':   [500],
     'patience':     [50],
 }
@@ -53,7 +53,7 @@ sweep_homophilous = {
 sweep_heterophilous = {
     'hidden_dim':   [256, 512],
     'lr':           [0.05, 0.1],
-    'weight_decay': [0.0, 5e-4, 5e-3, 1e-2],
+    'weight_decay': [0.0, 5e-4, 5e-3],
     'max_epochs':   [1000],
     'patience':     [100],
 }
@@ -67,10 +67,10 @@ sweep_heterophilous = {
 #   'R_only'             — curvature regulariser only (ablation)
 sweep_entropy = {
     'loss_type':     ['ce_only', 'weighted_ce', 'ce_plus_R', 'weighted_ce_plus_R', 'R_only'],
-    'beta':          [0.1, 0.5, 1.0],
-    'lambda_R':      [0.01, 0.1, 1.0, 5.0, 10.0],  # ignored for ce_only / weighted_ce
-    'entropy_floor': [None, 0.05, 0.1, 0.2], # ignored for ce_only / weighted_ce
-    'per_class_R':   [False, True], # ignored for ce_only/ weighted_ce
+    'beta':          [0.5],
+    'lambda_R':      [0.1, 1.0, 10.0],  # ignored for ce_only / weighted_ce
+    'entropy_floor': [None, 0.2], # ignored for ce_only / weighted_ce
+    'per_class_R':   [False], # ignored for ce_only/ weighted_ce
     # band swept as coupled (lower, upper) pairs
     'band':          [(-1.0, 0.0), (-1.5, 0.25), (-2.0, 0.5)],
 }
