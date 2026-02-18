@@ -68,11 +68,11 @@ sweep_heterophilous = {
 sweep_entropy = {
     'loss_type':     ['ce_only', 'weighted_ce', 'ce_plus_R', 'weighted_ce_plus_R', 'R_only'],
     'beta':          [0.5],
-    'lambda_R':      [0.1, 1.0, 10.0],  # ignored for ce_only / weighted_ce
-    'entropy_floor': [None, 0.2], # ignored for ce_only / weighted_ce
+    'lambda_R':      [1.0, 10.0],  # ignored for ce_only / weighted_ce, deleted 0.1 as we already have an ablation version
+    'entropy_floor': [None, 0.1], # ignored for ce_only / weighted_ce, deleted 0.2 for now
     'per_class_R':   [False], # ignored for ce_only/ weighted_ce
     # band swept as coupled (lower, upper) pairs
-    'band':          [(-1.0, 0.0), (-1.5, 0.25), (-2.0, 0.5)],
+    'band':          [(-1.0, 0.0), (-1.5, 0.25)], #deleted (-2, 0.5) for now
 }
 
 # ── Classifier head defaults ───────────────────────────────────────
