@@ -103,6 +103,11 @@ def build_entropy_grid(dataset: str, loss_type: str) -> list[dict]:
     return all_combos
 
 
+# Keys used for run deduplication — must match in both load_completed_runs and make_run_signature
+_SIG_CSV_COLS = ['dataset', 'model', 'loss_type', 'K', 'seed', 'lr', 'weight_decay', 'hidden_dim']
+_SIG_CMD_ARGS = ['--dataset', '--model', '--loss-type', '--K', '--seed', '--lr', '--weight-decay', '--hidden-dim']
+
+
 def load_completed_runs(results_csv: Path) -> set:
     """Load set of completed run signatures from sweep_results.csv."""
     if not _PANDAS_AVAILABLE or not results_csv.exists():
@@ -110,10 +115,7 @@ def load_completed_runs(results_csv: Path) -> set:
     try:
         df = pd.read_csv(results_csv)
         completed = set()
-        key_cols = ['dataset', 'model', 'loss_type', 'K', 'seed', 'split',
-                    'lr', 'weight_decay', 'hidden_dim']
-        # Only use columns that exist
-        key_cols = [c for c in key_cols if c in df.columns]
+        key_cols = [c for c in _SIG_CSV_COLS if c in df.columns]
         for _, row in df.iterrows():
             sig = tuple(str(row[c]) for c in key_cols)
             completed.add(sig)
@@ -124,13 +126,15 @@ def load_completed_runs(results_csv: Path) -> set:
         return set()
 
 
-def make_run_signature(cmd: list, key_args: list) -> tuple:
+def make_run_signature(cmd: list) -> tuple:
     """Extract key argument values from a command list to form a run signature."""
     vals = {}
     for i, token in enumerate(cmd):
-        if token in key_args and i + 1 < len(cmd):
+        if token in _SIG_CMD_ARGS and i + 1 < len(cmd):
             vals[token] = cmd[i + 1]
-    return tuple(vals.get(k, '') for k in key_args)
+    # Map CLI flag names to CSV column order
+    mapping = dict(zip(_SIG_CMD_ARGS, _SIG_CSV_COLS))
+    return tuple(vals.get(flag, '') for flag in _SIG_CMD_ARGS)
 
 
 def run_training(cmd: list[str], dry_run: bool = False) -> int:
@@ -250,9 +254,7 @@ def main():
 
                             # Check if already completed (resume support)
                             if args.skip_existing and completed_runs:
-                                sig_keys = ['--dataset', '--model', '--loss-type',
-                                            '--K', '--seed', '--lr', '--weight-decay', '--hidden-dim']
-                                sig = make_run_signature(cmd, sig_keys)
+                                sig = make_run_signature(cmd)
                                 if sig in completed_runs:
                                     skipped += 1
                                     continue
@@ -263,7 +265,7 @@ def main():
                                 failed_runs.append(cmd)
 
     print(f"\n{'='*60}")
-    print(f"Sweep complete. Total runs: {total_runs}")
+    print(f"Sweep complete. Total runs: {total_runs}, Skipped (already done): {skipped}")
     if failed_runs:
         print(f"Failed runs ({len(failed_runs)}):")
         for cmd in failed_runs:
