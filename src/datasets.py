@@ -10,7 +10,7 @@ def load_dataset(name: str, root_dir: str = "data", planetoid_split: str = "publ
     Load a node classification dataset with standard splits.
     
     Args:
-        name: 'cora', 'pubmed', 'roman-empire', 'minesweeper'
+        name: 'cora', 'pubmed', 'roman-empire', 'minesweeper', 'squirrel'
         root_dir: where datasets are downloaded/cached
         planetoid_split: split protocol for Planetoid datasets ("public", "full", "random")
         planetoid_normalize: whether to normalize node features for Planetoid datasets
@@ -46,7 +46,14 @@ def load_dataset(name: str, root_dir: str = "data", planetoid_split: str = "publ
         dataset = HeterophilousGraphDataset(root=root_dir, name='Minesweeper')
         data = dataset[0]
         dataset_kind = "heterophilous"
-            
+
+    elif name == 'squirrel':
+        # HeterophilousGraphDataset: 5 classes, 10 splits — same reliable source as Roman-empire/Minesweeper
+        # WikipediaNetwork(geom_gcn_preprocess=True) has a broken downloader in recent PyG versions
+        dataset = HeterophilousGraphDataset(root=root_dir, name='Squirrel')
+        data = dataset[0]
+        dataset_kind = "heterophilous"
+
     else:
         raise ValueError(f"Unknown dataset: {name}")
     
