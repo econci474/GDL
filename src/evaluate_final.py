@@ -324,7 +324,10 @@ def main():
                         help="Batch evaluate all configs in best_hyperparams.csv")
     parser.add_argument("--best-hyperparams-path", type=str, default=None,
                         help="Path to best_hyperparams CSV (e.g. results/best_hyperparams_GCN.csv). "
-                             "Defaults to results/best_hyperparams.csv")
+                             "Defaults to <results-dir>/best_hyperparams.csv")
+    parser.add_argument("--results-dir", type=str, default=None,
+                        help="Override for results directory (e.g. /content/drive/MyDrive/GDL/sweep_results). "
+                             "Sets all cfg path variables relative to this root, making CWD irrelevant.")
     parser.add_argument("--seeds", nargs="+", default=["all"],
                         help="Seeds to evaluate (used with --from-best-hyperparams), or 'all'")
     parser.add_argument("--K-values", nargs="+", default=["all"],
@@ -349,6 +352,17 @@ def main():
     parser.add_argument("--planetoid-split", type=str, default="public")
 
     args = parser.parse_args()
+
+    # Override cfg paths if --results-dir is given (makes CWD irrelevant on Colab)
+    if args.results_dir:
+        r = Path(args.results_dir)
+        cfg.results_dir          = str(r)
+        cfg.runs_dir             = str(r / "runs")
+        cfg.tables_dir           = str(r / "tables")
+        cfg.figures_dir          = str(r / "figures")
+        cfg.classifier_heads_dir = str(r / "classifier_heads")
+        global FINAL_RESULTS_PATH
+        FINAL_RESULTS_PATH = r / "tables" / "final_results.csv"
 
     if args.from_best_hyperparams:
         run_from_best_hyperparams(args)
