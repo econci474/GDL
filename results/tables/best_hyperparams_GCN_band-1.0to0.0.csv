@@ -1,0 +1,5 @@
+dataset,model,loss_type,total_val_loss,n_runs_aggregated,lr,weight_decay,patience,max_epochs,hidden_dim,beta,lambda_r,entropy_floor,per_class_r,band_lower,band_upper
+Cora,GCN,ce_plus_R,137.4050635099411,49,0.01,0.0,50,500,64,0.5,1.0,0.1,False,-1.0,0.0
+PubMed,GCN,ce_plus_R,90.18185865879059,48,0.005,0.0,50,500,16,0.5,1.0,0.1,False,-1.0,0.0
+Roman-empire,GCN,ce_plus_R,99.88584661483765,24,0.05,0.0005,100,1000,256,0.5,1.0,0.1,False,-1.0,0.0
+Squirrel,GCN,ce_plus_R,77.03709840774536,24,0.05,0.005,100,1000,256,0.5,1.0,0.1,False,-1.0,0.0

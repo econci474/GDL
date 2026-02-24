@@ -4,9 +4,14 @@ select_hyperparams.py — Select best hyperparameters from sweep_results.csv.
 For each (dataset, model, loss_type), finds the hyperparameter tuple that
 minimises the sum of best_val_loss across all K depths (and splits).
 
+Also generates per-band best_hyperparams CSVs for ce_plus_R so that
+both band configurations can be evaluated systematically.
+
 Usage:
     python src/select_hyperparams.py
     python src/select_hyperparams.py --hetero-split-mode first
+    python src/select_hyperparams.py --model GCN --sweep-csv sweep_results_GCN.csv
+    python src/select_hyperparams.py --results-dir /content/drive/MyDrive/GDL/sweep_results --model GCN
 """
 
 import argparse
@@ -17,9 +22,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as cfg
 
-SWEEP_RESULTS_PATH = Path(cfg.results_dir) / "sweep_results.csv"
-BEST_HYPERPARAMS_PATH = Path(cfg.results_dir) / "best_hyperparams.csv"
-
 # Columns that define a hyperparameter configuration
 HYPERPARAM_COLS = [
     "lr", "weight_decay", "patience", "max_epochs", "hidden_dim",
@@ -27,26 +29,60 @@ HYPERPARAM_COLS = [
     "band_lower", "band_upper",
 ]
 
+# Band configurations to generate separate best_hyperparams files for.
+# Each entry: (band_lower, band_upper, filename_suffix)
+CE_PLUS_R_BANDS = [
+    (-1.0,  0.0,   "band-1.0to0.0"),
+    (-1.5,  0.25,  "band-1.5to0.25"),
+]
 
-def select_hyperparams(hetero_split_mode: str = "all") -> pd.DataFrame:
+
+def _best_per_group(df: pd.DataFrame) -> pd.DataFrame:
+    """For each (dataset, model, loss_type), pick the lowest-total-val-loss config."""
+    results = []
+    group_cols = ["dataset", "model", "loss_type"]
+    for group_keys, group_df in df.groupby(group_cols):
+        dataset, model, loss_type = group_keys
+        agg = (
+            group_df
+            .groupby(HYPERPARAM_COLS, dropna=False)["best_val_loss"]
+            .agg(total_val_loss="sum", n_runs_aggregated="count")
+            .reset_index()
+        )
+        best_row = agg.loc[agg["total_val_loss"].idxmin()].to_dict()
+        result = {
+            "dataset": dataset, "model": model, "loss_type": loss_type,
+            "total_val_loss": best_row["total_val_loss"],
+            "n_runs_aggregated": best_row["n_runs_aggregated"],
+        }
+        result.update({col: best_row[col] for col in HYPERPARAM_COLS})
+        results.append(result)
+        print(f"  {dataset}/{model}/{loss_type}: "
+              f"best total_val_loss={best_row['total_val_loss']:.4f} "
+              f"lr={best_row['lr']}, wd={best_row['weight_decay']}, "
+              f"patience={best_row['patience']}")
+    return pd.DataFrame(results)
+
+
+def select_hyperparams(
+    sweep_csv: Path,
+    results_dir: Path,
+    model_suffix: str,
+    hetero_split_mode: str = "all",
+):
     """
-    For each (dataset, model, loss_type):
-      - Optionally restrict heterophilous datasets to split=0
-      - Group by hyperparameter tuple
-      - Sum best_val_loss across all K (and splits)
-      - Return the tuple with the lowest total val loss
+    Select best hyperparameters from a sweep CSV.
 
-    Args:
-        hetero_split_mode: 'first' to use only split 0 for hetero datasets,
-                           'all' to use all splits.
-    Returns:
-        DataFrame with one row per (dataset, model, loss_type).
+    Outputs:
+      <results_dir>/best_hyperparams<suffix>.csv              — best overall
+      <results_dir>/best_hyperparams<suffix>_band-1.0to0.0.csv  — best for each ce_plus_R band
+      <results_dir>/best_hyperparams<suffix>_band-1.5to0.25.csv
     """
-    if not SWEEP_RESULTS_PATH.exists():
-        raise FileNotFoundError(f"Sweep results not found: {SWEEP_RESULTS_PATH}")
+    if not sweep_csv.exists():
+        raise FileNotFoundError(f"Sweep results not found: {sweep_csv}")
 
-    df = pd.read_csv(SWEEP_RESULTS_PATH)
-    print(f"Loaded {len(df)} rows from {SWEEP_RESULTS_PATH}")
+    df = pd.read_csv(sweep_csv)
+    print(f"Loaded {len(df)} rows from {sweep_csv}")
 
     # Optionally restrict hetero datasets to split 0
     if hetero_split_mode == "first":
@@ -54,60 +90,79 @@ def select_hyperparams(hetero_split_mode: str = "all") -> pd.DataFrame:
         df = df[~hetero_mask | (df["split"] == 0)].copy()
         print(f"  Restricted hetero datasets to split=0: {len(df)} rows remaining")
 
-    results = []
-    group_cols = ["dataset", "model", "loss_type"]
+    results_dir.mkdir(parents=True, exist_ok=True)
+    suf = f"_{model_suffix}" if model_suffix else ""
 
-    for group_keys, group_df in df.groupby(group_cols):
-        dataset, model, loss_type = group_keys
+    # ── 1. Overall best (all hyperparams free) ────────────────────────────
+    print("\n── Overall best hyperparameters ──")
+    best_overall = _best_per_group(df)
+    out = results_dir / f"best_hyperparams{suf}.csv"
+    best_overall.to_csv(out, index=False)
+    print(f"Saved -> {out}")
 
-        # For each hyperparameter combination, sum val loss across all K and splits
-        agg = (
-            group_df
-            .groupby(HYPERPARAM_COLS, dropna=False)["best_val_loss"]
-            .sum()
-            .reset_index()
-            .rename(columns={"best_val_loss": "total_val_loss"})
-        )
+    # ── 2. Per-band best for ce_plus_R ────────────────────────────────────
+    ce_r_df = df[df["loss_type"] == "ce_plus_R"].copy()
+    for band_lower, band_upper, band_label in CE_PLUS_R_BANDS:
+        band_df = ce_r_df[
+            (ce_r_df["band_lower"] == band_lower) &
+            (ce_r_df["band_upper"] == band_upper)
+        ].copy()
+        if band_df.empty:
+            print(f"\n  [SKIP] No data for ce_plus_R band ({band_lower}, {band_upper})")
+            continue
 
-        # Pick the combination with the lowest total val loss
-        best_idx = agg["total_val_loss"].idxmin()
-        best_row = agg.loc[best_idx].to_dict()
+        print(f"\n── Best hyperparameters: ce_plus_R band ({band_lower}, {band_upper}) ──")
+        best_band = _best_per_group(band_df)
+        out = results_dir / f"best_hyperparams{suf}_{band_label}.csv"
+        best_band.to_csv(out, index=False)
+        print(f"Saved -> {out}")
 
-        result = {
-            "dataset": dataset,
-            "model": model,
-            "loss_type": loss_type,
-            "total_val_loss": best_row["total_val_loss"],
-            "n_runs_aggregated": len(group_df),
-        }
-        result.update({col: best_row[col] for col in HYPERPARAM_COLS})
-        results.append(result)
-
-        print(f"  {dataset} / {model} / {loss_type}: "
-              f"best total_val_loss={best_row['total_val_loss']:.4f} "
-              f"lr={best_row['lr']}, wd={best_row['weight_decay']}, "
-              f"patience={best_row['patience']}")
-
-    best_df = pd.DataFrame(results)
-    BEST_HYPERPARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    best_df.to_csv(BEST_HYPERPARAMS_PATH, index=False)
-    print(f"\nSaved best hyperparameters to: {BEST_HYPERPARAMS_PATH}")
-    return best_df
+    return best_overall
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Select best hyperparameters from sweep results")
+    parser = argparse.ArgumentParser(
+        description="Select best hyperparameters from sweep results"
+    )
     parser.add_argument(
         "--hetero-split-mode", type=str, default="all",
         choices=["all", "first"],
-        help="'first': use only split 0 for heterophilous datasets. "
-             "'all': aggregate over all splits (default)."
+        help="'first': use only split 0 for heterophilous datasets (default: all).",
+    )
+    parser.add_argument(
+        "--model", type=str, default=None,
+        help="Model name suffix for output files, e.g. 'GCN' -> best_hyperparams_GCN.csv",
+    )
+    parser.add_argument(
+        "--sweep-csv", type=str, default=None,
+        help="Path to sweep_results CSV. Defaults to <results-dir>/sweep_results[_MODEL].csv",
+    )
+    parser.add_argument(
+        "--results-dir", type=str, default=None,
+        help="Override results directory (e.g. /content/drive/MyDrive/GDL/sweep_results). "
+             "Makes CWD irrelevant on Colab.",
     )
     args = parser.parse_args()
 
-    best_df = select_hyperparams(hetero_split_mode=args.hetero_split_mode)
-    print("\nBest hyperparameters:")
-    print(best_df.to_string(index=False))
+    results_dir = Path(args.results_dir) if args.results_dir else Path(cfg.results_dir)
+    model_suffix = args.model or ""
+
+    if args.sweep_csv:
+        sweep_csv = Path(args.sweep_csv)
+    else:
+        suf = f"_{model_suffix}" if model_suffix else ""
+        # Local layout: results/tables/sweep_results_GCN.csv
+        # Colab layout: <results_dir>/sweep_results_GCN.csv (flat)
+        local_candidate = Path(cfg.tables_dir) / f"sweep_results{suf}.csv"
+        colab_candidate = results_dir / f"sweep_results{suf}.csv"
+        sweep_csv = local_candidate if local_candidate.exists() else colab_candidate
+
+    select_hyperparams(
+        sweep_csv=sweep_csv,
+        results_dir=results_dir,
+        model_suffix=model_suffix,
+        hetero_split_mode=args.hetero_split_mode,
+    )
 
 
 if __name__ == "__main__":

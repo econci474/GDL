@@ -328,6 +328,9 @@ def main():
     parser.add_argument("--results-dir", type=str, default=None,
                         help="Override for results directory (e.g. /content/drive/MyDrive/GDL/sweep_results). "
                              "Sets all cfg path variables relative to this root, making CWD irrelevant.")
+    parser.add_argument("--output-path", type=str, default=None,
+                        help="Explicit path for output CSV (e.g. final_results_GCN_band-1.0to0.0.csv). "
+                             "Overrides the default final_results.csv.")
     parser.add_argument("--seeds", nargs="+", default=["all"],
                         help="Seeds to evaluate (used with --from-best-hyperparams), or 'all'")
     parser.add_argument("--K-values", nargs="+", default=["all"],
@@ -363,6 +366,11 @@ def main():
         cfg.classifier_heads_dir = str(r / "classifier_heads")
         global FINAL_RESULTS_PATH
         FINAL_RESULTS_PATH = r / "tables" / "final_results.csv"
+
+    # Override output path if explicitly given
+    if args.output_path:
+        global FINAL_RESULTS_PATH
+        FINAL_RESULTS_PATH = Path(args.output_path)
 
     if args.from_best_hyperparams:
         run_from_best_hyperparams(args)
