@@ -192,7 +192,7 @@ def evaluate_single(
     model = build_model(model_name, data, num_classes, K, eval_config).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    use_classifier_head = loss_type not in (None, "ce_only", "standard")
+    use_classifier_head = True  # sweep always uses train_gnn_entropy.py (classifier heads for all loss types)
     test_loss, test_acc = evaluate_test_set(model, data, device, use_classifier_head)
 
     method = "Classifier Heads" if use_classifier_head else "Baseline GNN"
