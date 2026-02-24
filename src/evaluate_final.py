@@ -102,22 +102,43 @@ def evaluate_test_set(model, data, device, use_classifier_head=False):
     return float(test_loss), float(test_acc.item())
 
 
+def build_loss_dir(loss_type: str, config: dict) -> str:
+    """Mirror the loss_dir naming used by train_gnn_entropy.py.
+
+    Regulariser loss types get a decorated name that encodes their key
+    hyperparameters (e.g. 'ce_plus_R_R1.0_smooth_band-1.0to0.0').
+    Plain CE types ('ce_only', 'weighted_ce') use the bare loss_type string.
+    """
+    LAMBDA_R_LOSS_TYPES = {"ce_plus_R", "weighted_ce_plus_R", "R_only"}
+    if loss_type in LAMBDA_R_LOSS_TYPES:
+        parts = []
+        parts.append(f"R{config.get('lambda_R', 1.0):.1f}")
+        parts.append(config.get('R_mode', 'hard'))
+        if config.get('entropy_floor') is not None:
+            parts.append(f"floor{config.get('entropy_floor'):.2f}")
+        if config.get('per_class_R', False):
+            parts.append("perclass")
+        band_lower = config.get('band_lower', -1.0)
+        band_upper = config.get('band_upper', 0.0)
+        if band_lower != -1.0 or band_upper != 0.0:
+            parts.append(f"band{band_lower:.1f}to{band_upper:.1f}")
+        return f"{loss_type}_{'_'.join(parts)}"
+    return loss_type
+
+
 def resolve_checkpoint_path(dataset, model_name, K, seed, split_id, loss_type, config):
-    """Resolve the path to best.pt given run parameters."""
-    if loss_type and loss_type != "ce_only":
-        # Classifier heads directory
-        base_dir = (
-            Path(cfg.classifier_heads_dir)
-            / loss_type / dataset / model_name
-            / f"seed_{seed}" / f"K_{K}"
-        )
-    else:
-        # Standard GNN runs directory
-        base_dir = (
-            Path(config["runs_dir"])
-            / dataset / model_name
-            / f"seed_{seed}" / f"K_{K}"
-        )
+    """Resolve the path to best.pt given run parameters.
+
+    The sweep always uses train_gnn_entropy.py, which saves all loss types
+    (including ce_only and weighted_ce) under cfg.classifier_heads_dir.
+    Regulariser types get a decorated subdirectory name via build_loss_dir().
+    """
+    loss_dir = build_loss_dir(loss_type or "ce_only", config)
+    base_dir = (
+        Path(cfg.classifier_heads_dir)
+        / loss_dir / dataset / model_name
+        / f"seed_{seed}" / f"K_{K}"
+    )
 
     if split_id is not None and split_id >= 0:
         base_dir = base_dir / f"split_{split_id}"
