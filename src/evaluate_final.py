@@ -236,11 +236,14 @@ def evaluate_single(
 
 def run_from_best_hyperparams(args):
     """Batch evaluation using best_hyperparams.csv."""
-    best_hp_path = Path(cfg.results_dir) / "best_hyperparams.csv"
+    if hasattr(args, 'best_hyperparams_path') and args.best_hyperparams_path:
+        best_hp_path = Path(args.best_hyperparams_path)
+    else:
+        best_hp_path = Path(cfg.results_dir) / "best_hyperparams.csv"
     if not best_hp_path.exists():
         raise FileNotFoundError(
-            f"best_hyperparams.csv not found at {best_hp_path}. "
-            "Run src/select_hyperparams.py first."
+            f"best_hyperparams file not found at {best_hp_path}. "
+            "Run src/select_hyperparams.py first, or pass --best-hyperparams-path."
         )
 
     best_df = pd.read_csv(best_hp_path)
@@ -319,6 +322,9 @@ def main():
     # Batch mode
     parser.add_argument("--from-best-hyperparams", action="store_true",
                         help="Batch evaluate all configs in best_hyperparams.csv")
+    parser.add_argument("--best-hyperparams-path", type=str, default=None,
+                        help="Path to best_hyperparams CSV (e.g. results/best_hyperparams_GCN.csv). "
+                             "Defaults to results/best_hyperparams.csv")
     parser.add_argument("--seeds", nargs="+", default=["all"],
                         help="Seeds to evaluate (used with --from-best-hyperparams), or 'all'")
     parser.add_argument("--K-values", nargs="+", default=["all"],
