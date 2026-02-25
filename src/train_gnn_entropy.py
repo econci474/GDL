@@ -394,7 +394,7 @@ def run_one_split(
         R_alpha=config.get("R_alpha", 10.0),
         entropy_floor=config.get("entropy_floor", None),
         band_lower=config.get("band_lower", -1.5),
-        band_upper=config.get("band_upper", 0.5),
+        band_upper=config.get("band_upper", 0.25),
     )
 
     for epoch in range(1, config["max_epochs"] + 1):
@@ -432,7 +432,7 @@ def run_one_split(
             per_class_R=config.get("per_class_R", False),
             exponential_decay=config.get("exponential_decay", True),
             band_lower=config.get("band_lower", -1.5),
-            band_upper=config.get("band_upper", 0.5),
+            band_upper=config.get("band_upper", 0.25),
         )
         for k, loss_k in enumerate(layer_losses):
             log_entry[f"train_loss_layer_{k}"] = loss_k
@@ -473,7 +473,7 @@ def run_one_split(
                         per_class_R=config.get("per_class_R", False),
                         exponential_decay=config.get("exponential_decay", True),
                         band_lower=config.get("band_lower", -1.5),
-                        band_upper=config.get("band_upper", 0.5),
+                        band_upper=config.get("band_upper", 0.25),
                     ),
                 ),
                 output_dir / "best.pt",
@@ -528,7 +528,7 @@ def train_gnn_classifier_heads(
 
     # Base directory with loss_type and regularization config
     # Create descriptive subdirectory based on regularization settings
-    if args.loss_type in ['ce_plus_R', 'R_only']:
+    if args.loss_type in ['ce_plus_R', 'weighted_ce_plus_R', 'R_only']:
         # Include R configuration in directory name
         R_config_parts = []
         R_config_parts.append(f"R{config.get('lambda_R', 1.0):.1f}")
@@ -611,7 +611,7 @@ def train_gnn_classifier_heads(
                 entropy_floor=config.get("entropy_floor", None),
                 per_class_r=config.get("per_class_R", False),
                 band_lower=config.get("band_lower", -1.5),
-                band_upper=config.get("band_upper", 0.5),
+                band_upper=config.get("band_upper", 0.25),
                 best_epoch=result["best_epoch"],
                 best_val_loss=result["best_val_loss"],
                 best_val_acc=result["best_val_acc"],

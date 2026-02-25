@@ -105,12 +105,12 @@ def evaluate_test_set(model, data, device, use_classifier_head=False):
 def build_loss_dir(loss_type: str, config: dict) -> str:
     """Mirror the loss_dir naming used by train_gnn_entropy.py.
 
-    Regulariser loss types get a decorated name that encodes their key
-    hyperparameters (e.g. 'ce_plus_R_R1.0_smooth_band-1.0to0.0').
+    Regulariser loss types ('ce_plus_R', 'weighted_ce_plus_R', 'R_only') get a
+    decorated name encoding key hyperparameters (e.g. 'ce_plus_R_R1.0_smooth_band-1.0to0.0').
     Plain CE types ('ce_only', 'weighted_ce') use the bare loss_type string.
     """
-    LAMBDA_R_LOSS_TYPES = {"ce_plus_R", "weighted_ce_plus_R", "R_only"}
-    if loss_type in LAMBDA_R_LOSS_TYPES:
+    DECORATED_LOSS_TYPES = {"ce_plus_R", "weighted_ce_plus_R", "R_only"}
+    if loss_type in DECORATED_LOSS_TYPES:
         parts = []
         parts.append(f"R{config.get('lambda_R', 1.0):.1f}")
         parts.append(config.get('R_mode', 'hard'))

@@ -83,7 +83,7 @@ R_mode            = 'smooth'
 entropy_floor     = None
 per_class_R       = False
 band_lower        = -1.5
-band_upper        = 0.5
+band_upper        = 0.25
 
 # ── Paths ──────────────────────────────────────────────────────────
 results_dir          = 'results'
