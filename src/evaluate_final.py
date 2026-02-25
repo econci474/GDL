@@ -356,6 +356,8 @@ def main():
 
     args = parser.parse_args()
 
+    global FINAL_RESULTS_PATH
+
     # Override cfg paths if --results-dir is given (makes CWD irrelevant on Colab)
     if args.results_dir:
         r = Path(args.results_dir)
@@ -364,12 +366,10 @@ def main():
         cfg.tables_dir           = str(r / "tables")
         cfg.figures_dir          = str(r / "figures")
         cfg.classifier_heads_dir = str(r / "classifier_heads")
-        global FINAL_RESULTS_PATH
         FINAL_RESULTS_PATH = r / "tables" / "final_results.csv"
 
     # Override output path if explicitly given
     if args.output_path:
-        global FINAL_RESULTS_PATH
         FINAL_RESULTS_PATH = Path(args.output_path)
 
     if args.from_best_hyperparams:
