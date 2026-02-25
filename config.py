@@ -53,7 +53,7 @@ sweep_homophilous = {
 sweep_heterophilous = {
     'hidden_dim':   [256, 512],
     'lr':           [0.05, 0.1],
-    'weight_decay': [0.0, 5e-4, 5e-3],
+    'weight_decay': [0.001, 5e-4, 5e-3],
     'max_epochs':   [1000],
     'patience':     [100],
 }
