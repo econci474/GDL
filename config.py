@@ -11,7 +11,7 @@ datasets = homophilous_datasets + heterophilous_datasets
 
 # ── Model configuration ────────────────────────────────────────────
 K_max    = 8
-dropout_input  = 0.5   # Applied to raw input features (k=0) before first conv
+dropout_input  = 0.6   # Applied to raw input features (k=0) before first conv
 dropout_middle = None  # Applied between intermediate conv layers (None = disabled)
 
 # GAT specific
@@ -44,7 +44,7 @@ defaults_heterophilous = {
 sweep_homophilous = {
     'hidden_dim':   [16, 64],
     'lr':           [0.01, 0.005],
-    'weight_decay': [0.0, 5e-4],
+    'weight_decay': [0.001, 5e-4], #0.001 for Pubmed GAT
     'max_epochs':   [500],
     'patience':     [50],
 }
