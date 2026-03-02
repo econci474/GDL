@@ -139,13 +139,13 @@ def make_run_signature(cmd: list) -> tuple:
 
 def run_training(cmd: list[str], dry_run: bool = False) -> int:
     """Run a training command as subprocess. Returns returncode."""
-    print(f"\n>>> {' '.join(cmd)}")
+    print(f"\n>>> {' '.join(cmd)}", flush=True)
     if dry_run:
-        print("    [DRY RUN — skipped]")
+        print("    [DRY RUN — skipped]", flush=True)
         return 0
     result = subprocess.run(cmd, cwd=str(ROOT))
     if result.returncode != 0:
-        print(f"    [WARNING] Command exited with code {result.returncode}")
+        print(f"    [WARNING] Command exited with code {result.returncode}", flush=True)
     return result.returncode
 
 
@@ -179,16 +179,17 @@ def main():
     K_values   = expand_all(args.K_values,    list(range(1, cfg.K_max + 1)), cast=int)
     seeds      = expand_all(args.seeds,       cfg.seeds, cast=int)
 
-    print(f"\n{'='*60}")
-    print(f"Sweep configuration:")
-    print(f"  Datasets:   {datasets}")
-    print(f"  Models:     {models}")
-    print(f"  Loss types: {loss_types}")
-    print(f"  K values:   {K_values}")
-    print(f"  Seeds:      {seeds}")
-    print(f"  Split mode: {args.split_mode}")
-    print(f"  Skip existing: {args.skip_existing}")
-    print(f"{'='*60}\n")
+    import datetime
+    print(f"\n{'='*60}", flush=True)
+    print(f"Sweep configuration:", flush=True)
+    print(f"  Datasets:   {datasets}", flush=True)
+    print(f"  Models:     {models}", flush=True)
+    print(f"  Loss types: {loss_types}", flush=True)
+    print(f"  K values:   {K_values}", flush=True)
+    print(f"  Seeds:      {seeds}", flush=True)
+    print(f"  Split mode: {args.split_mode}", flush=True)
+    print(f"  Skip existing: {args.skip_existing}", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
     # Load completed runs for resume support
     sweep_csv = ROOT / 'results' / 'sweep_results.csv'
@@ -196,6 +197,7 @@ def main():
     skipped = 0
 
     total_runs = 0
+    run_idx    = 0
     failed_runs = []
 
     for dataset in datasets:
@@ -259,20 +261,27 @@ def main():
                                     skipped += 1
                                     continue
 
+                            run_idx += 1
+                            ts = datetime.datetime.now().strftime('%H:%M:%S')
+                            print(f"\n{'─'*60}", flush=True)
+                            print(f"[{ts}] Run #{run_idx}  |  {dataset} / {model} / {loss_type} / K={K} / seed={seed}", flush=True)
+                            print(f"  lr={hp.get('lr')}  wd={hp.get('weight_decay')}  hidden={hp.get('hidden_dim')}", flush=True)
+                            print(f"{'─'*60}", flush=True)
+
                             rc = run_training(cmd, dry_run=args.dry_run)
                             total_runs += 1
                             if rc != 0:
                                 failed_runs.append(cmd)
 
-    print(f"\n{'='*60}")
-    print(f"Sweep complete. Total runs: {total_runs}, Skipped (already done): {skipped}")
+    print(f"\n{'='*60}", flush=True)
+    print(f"Sweep complete. Total runs: {total_runs}, Skipped (already done): {skipped}", flush=True)
     if failed_runs:
-        print(f"Failed runs ({len(failed_runs)}):")
+        print(f"Failed runs ({len(failed_runs)}):", flush=True)
         for cmd in failed_runs:
-            print(f"  {' '.join(cmd)}")
+            print(f"  {' '.join(cmd)}", flush=True)
     else:
-        print("All runs completed successfully.")
-    print(f"{'='*60}\n")
+        print("All runs completed successfully.", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
 
 if __name__ == "__main__":

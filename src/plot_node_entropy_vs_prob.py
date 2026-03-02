@@ -548,7 +548,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     plt.close(fig_c)
 
 
-def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
+def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', split_idx=None):
     """
     Create scatter plot of entropy vs binary correctness (correct/incorrect).
     
@@ -559,15 +559,17 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
         seed: Random seed
         config: Config dict
         split: 'val' or 'test'
+        split_idx: If set, use _split{N}_ pernode filename (heterophilous datasets).
     """
-    # Load per-node arrays
-    arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}_pernode.npz'
+    # Build path with optional split suffix
+    split_sfx   = f'_split{split_idx}' if split_idx is not None else ''
+    arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{split_sfx}_pernode.npz'
     
     if not arrays_path.exists():
         print(f"Error: Per-node arrays not found at {arrays_path}")
         return
     
-    data = np.load(arrays_path)
+    data   = np.load(arrays_path)
     k_list = data['k_list']
     
     # Load dataset to get true labels
@@ -576,10 +578,14 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
     labels = graph_data.y.numpy()
     
     # Determine which nodes to plot
-    if split == 'val':
-        mask = graph_data.val_mask.numpy()
+    # For multi-split datasets val_mask / test_mask are (N, num_splits)
+    if split_idx is not None:
+        val_mask  = graph_data.val_mask.numpy()[:, split_idx]
+        test_mask = graph_data.test_mask.numpy()[:, split_idx]
     else:
-        mask = graph_data.test_mask.numpy()
+        val_mask  = graph_data.val_mask.numpy()
+        test_mask = graph_data.test_mask.numpy()
+    mask = val_mask if split == 'val' else test_mask
     
     plot_indices = np.where(mask)[0]
     plot_labels = labels[plot_indices]
@@ -669,7 +675,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
     plt.close()
 
 
-def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated'):
+def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated', split_idx=None):
     """
     Create aggregated correctness plot: average probs across seeds, then classify by argmax.
     
@@ -680,6 +686,8 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
         seeds: List of seeds to aggregate
         config: Config dict
         split: 'val' or 'test'
+        split_idx: If set, load per-node arrays with split suffix (e.g. _split0_pernode.npz).
+                   Required for heterophilous datasets (Roman-empire, Squirrel).
     """
     # Load dataset to get true labels
     from src.datasets import load_dataset
@@ -687,10 +695,17 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     labels = graph_data.y.numpy()
     
     # Determine which nodes to plot
-    if split == 'val':
-        mask = graph_data.val_mask.numpy()
+    # For multi-split datasets, val_mask/test_mask are (N, num_splits)
+    if split_idx is not None:
+        val_mask  = graph_data.val_mask.numpy()[:, split_idx]
+        test_mask = graph_data.test_mask.numpy()[:, split_idx]
     else:
-        mask = graph_data.test_mask.numpy()
+        val_mask  = graph_data.val_mask.numpy()
+        test_mask = graph_data.test_mask.numpy()
+    if split == 'val':
+        mask = val_mask
+    else:
+        mask = test_mask
     
     plot_indices = np.where(mask)[0]
     plot_labels = labels[plot_indices]
@@ -699,8 +714,11 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     all_probs = {}  # k -> list of probs arrays
     k_list = None
     
+    # Build filename suffix for heterophilous datasets
+    split_sfx = f'_split{split_idx}' if split_idx is not None else ''
+
     for seed in seeds:
-        arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}_pernode.npz'
+        arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{split_sfx}_pernode.npz'
         
         if not arrays_path.exists():
             print(f"Warning: Per-node arrays not found for seed {seed}, skipping")
@@ -1193,12 +1211,14 @@ def main():
         if seed_mode == 'single':
             print(f"Creating entropy vs correctness plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seed={seed}, split={args.split}")
-            plot_entropy_vs_correctness(args.dataset, args.model, args.K, seed, config, args.split)
+            plot_entropy_vs_correctness(args.dataset, args.model, args.K, seed, config, args.split,
+                                        split_idx=args.split_idx)
         else:
             # Aggregated across seeds
             print(f"Creating aggregated entropy vs correctness plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seeds={seeds}, split={args.split}")
-            plot_entropy_vs_correctness_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode)
+            plot_entropy_vs_correctness_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode,
+                                                   split_idx=args.split_idx)
 
     else:
         # Probability plot (per-class)
