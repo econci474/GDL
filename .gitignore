@@ -2,6 +2,14 @@
 results/
 figures/
 
+# Data and sweep checkpoints
+data/
+data_test/
+colab_GCN_sweep/
+
+# Jupyter — track notebooks, ignore checkpoints
+.ipynb_checkpoints/
+
 # Python cache
 __pycache__/
 *.pyc
@@ -12,10 +20,6 @@ __pycache__/
 *.pt
 *.ckpt
 *.pkl
-
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
 
 # OS / editor
 .DS_Store
