@@ -18,6 +18,8 @@ parser.add_argument("--results-dir", type=str, default=None,
                          "(default: results/comparison_tables)")
 parser.add_argument("--out-dir", type=str, default=None,
                     help="Directory for output PNG (default: same as results-dir)")
+parser.add_argument("--per-layer", action="store_true", default=False,
+                    help="Load per-layer results (final_results_{MODEL}_per_layer.csv)")
 args = parser.parse_args()
 
 MODEL = args.model
@@ -25,9 +27,16 @@ RESULTS_DIR = Path(args.results_dir) if args.results_dir else Path("results/comp
 OUT_DIR = Path(args.out_dir) if args.out_dir else RESULTS_DIR
 
 # -- Config ----------------------------------------------------------------
-CSV_MAIN   = RESULTS_DIR / f"final_results_{MODEL}.csv"
-CSV_BAND10 = RESULTS_DIR / f"final_results_{MODEL}_band-1.0to0.0.csv"
-OUT_PATH   = OUT_DIR / f"test_acc_summary_table_{MODEL}.png"
+if args.per_layer:
+    CSV_MAIN   = RESULTS_DIR / f"final_results_{MODEL}_per_layer.csv"
+    CSV_BAND10 = RESULTS_DIR / f"final_results_{MODEL}_band-1.0to0.0_per_layer.csv"
+    CSV_BAND15 = RESULTS_DIR / f"final_results_{MODEL}_band-1.5to0.25_per_layer.csv"
+    OUT_PATH   = OUT_DIR / f"test_acc_summary_table_{MODEL}_per_layer.png"
+else:
+    CSV_MAIN   = RESULTS_DIR / f"final_results_{MODEL}.csv"
+    CSV_BAND10 = RESULTS_DIR / f"final_results_{MODEL}_band-1.0to0.0.csv"
+    CSV_BAND15 = RESULTS_DIR / f"final_results_{MODEL}_band-1.5to0.25.csv"
+    OUT_PATH   = OUT_DIR / f"test_acc_summary_table_{MODEL}.png"
 
 DATASETS = ["Cora", "PubMed", "Roman-empire", "Squirrel"]
 K_VALUES = list(range(1, 9))
@@ -51,8 +60,9 @@ def load_and_agg(path):
     agg["cell"] = agg.apply(lambda r: f"{r['mean']:.1f} \u00b1 {r['std']:.1f}", axis=1)
     return agg
 
-agg_main = load_and_agg(CSV_MAIN)
+agg_main   = load_and_agg(CSV_MAIN)
 agg_band10 = load_and_agg(CSV_BAND10) if CSV_BAND10.exists() else None
+agg_band15 = load_and_agg(CSV_BAND15) if CSV_BAND15.exists() else None
 
 def lookup(ds, loss_type, band_lower, band_upper, K):
     """Return formatted cell string, or '-' if not found."""
@@ -64,13 +74,11 @@ def lookup(ds, loss_type, band_lower, band_upper, K):
             return "-"
         src = agg_band10
         mask = (src.dataset == ds) & (src.loss_type == "ce_plus_R") & (src.K == K)
-    else:  # band (-1.5, 0.25)
-        src = agg_main
-        mask = (
-            (src.dataset == ds) & (src.loss_type == "ce_plus_R") &
-            (src.band_lower == band_lower) & (src.band_upper == band_upper) &
-            (src.K == K)
-        )
+    else:  # band (-1.5, 0.25) -- use dedicated band-1.5to0.25 results
+        if agg_band15 is None:
+            return "-"
+        src = agg_band15
+        mask = (src.dataset == ds) & (src.loss_type == "ce_plus_R") & (src.K == K)
     hits = src[mask]
     return hits["cell"].values[0] if len(hits) else "-"
 
@@ -159,9 +167,16 @@ for i, (k_label, row_cells) in enumerate(zip(row_labels, table_data)):
                 fontsize=8.5)
 
 # -- Title -----------------------------------------------------------------
-fig.text(0.5, 1.01,
-         f"{MODEL} Test Accuracy (%) -- mean \u00b1 std across seeds 0-2",
-         ha="center", va="bottom", fontsize=11, fontweight="bold")
+HETERO_DATASETS = ["Roman-empire", "Squirrel"]  # datasets averaged over seeds x splits
+hetero_note = "hetero: 3 seeds x split 0, homo: 3 seeds"
+if args.per_layer:
+    title_suffix = f"per-layer hyperparams, {hetero_note}"
+else:
+    title_suffix = f"mean +/- std, seeds 0-2"
+ax.text(fig_w / 2, fig_h + 0.06,
+        f"{MODEL} Test Accuracy (%), {title_suffix}",
+        ha="center", va="bottom", fontsize=10, fontweight="bold",
+        transform=ax.transData, clip_on=False)
 
 # -- Save ------------------------------------------------------------------
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

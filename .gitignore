@@ -1,0 +1,24 @@
+# Generated outputs — do not commit
+results/
+figures/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Checkpoints & large binaries
+*.pt
+*.ckpt
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

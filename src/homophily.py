@@ -127,14 +127,13 @@ def get_dataset_structural_metrics(dataset_name):
     Returns:
         dict with: num_nodes, num_edges_undirected, num_classes, h_edge, h_adj
     """
-    # Load dataset
-    data = load_dataset(dataset_name)
+    # Load dataset (returns tuple: data, num_classes, dataset_kind)
+    data, num_classes, dataset_kind = load_dataset(dataset_name)
     
     # Get graph properties
     num_nodes = data.x.shape[0]
     edge_index = data.edge_index
-    labels = data.y
-    num_classes = int(labels.max().item()) + 1
+    labels = data.y.squeeze()  # handle 2D label tensors (e.g. Minesweeper)
     
     # Compute homophily metrics
     h_adj, h_edge, baseline = compute_adjusted_homophily(edge_index, labels, num_classes)
@@ -158,12 +157,15 @@ def get_dataset_structural_metrics(dataset_name):
 
 def main():
     parser = argparse.ArgumentParser(description='Compute graph structural metrics including adjusted homophily')
-    parser.add_argument('--dataset', type=str, required=True,
+    parser.add_argument('--dataset', type=str, default=None,
                        help='Dataset name (e.g., Cora, PubMed, Roman-empire, Minesweeper)')
     parser.add_argument('--all', action='store_true',
                        help='Compute metrics for all datasets in config')
     
     args = parser.parse_args()
+    
+    if not args.all and args.dataset is None:
+        parser.error("Please provide --dataset or --all")
     
     # Convert config module to dict
     config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}

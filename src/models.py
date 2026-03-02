@@ -236,6 +236,7 @@ class GATNet(nn.Module):
             # Final layer: no activation, not stored as embedding
         
         logits = x  # [N, num_classes]
+        embeddings.append(logits.clone())  # k=K: final layer output
         return embeddings, logits
 
     def forward_with_classifier_head(self, data):

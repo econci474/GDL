@@ -1,7 +1,8 @@
 """Compute separability metrics from classifier head outputs.
 
 This script computes AUROC and Cohen's d for error detection based on entropy,
-directly from classifier head layer_probs.npz outputs.
+directly from classifier head layer_probs.npz outputs.  Supports aggregation
+across multiple seeds (--seed all) and accepts a custom --classifier-heads-dir.
 """
 
 import argparse
@@ -12,7 +13,6 @@ from pathlib import Path
 import sys
 import matplotlib.pyplot as plt
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as cfg
 
@@ -25,361 +25,388 @@ except ImportError:
 
 
 def compute_auroc_torchmetrics(H, e):
-    """
-    Compute AUROC for error detection using entropy as the score.
-    
-    Args:
-        H: torch.Tensor of entropy scores [N]
-        e: torch.Tensor of error indicators (1=wrong, 0=correct) [N]
-        
-    Returns:
-        auroc: AUROC score or NaN if undefined
-    """
+    """AUROC for error detection using entropy as the score."""
     if not TORCHMETRICS_AVAILABLE:
         return np.nan
-    
-    # Convert to tensors if needed
     if isinstance(H, np.ndarray):
         H = torch.from_numpy(H).float()
     if isinstance(e, np.ndarray):
         e = torch.from_numpy(e).long()
-    
-    # Check for edge cases
-    unique_labels = torch.unique(e)
-    if len(unique_labels) < 2:
-        # All correct or all incorrect
+    if len(torch.unique(e)) < 2:
         return np.nan
-    
     try:
-        # Use torchmetrics AUROC
         auroc_fn = AUROC(task='binary')
-        auroc_score = auroc_fn(H, e).item()
-        return auroc_score
+        return auroc_fn(H, e).item()
     except Exception as ex:
         print(f"Warning: AUROC computation failed: {ex}")
         return np.nan
 
 
 def compute_cohens_d(H_wrong, H_correct):
-    """
-    Compute Cohen's d effect size for entropy separation.
-    
-    d = (mean_wrong - mean_correct) / pooled_std
-    
-    Args:
-        H_wrong: Entropy values for incorrect predictions
-        H_correct: Entropy values for correct predictions
-        
-    Returns:
-        cohens_d: Effect size or NaN if not computable
-    """
-    n_w = len(H_wrong)
-    n_c = len(H_correct)
-    
-    # Need at least 2 samples in each group
+    """Cohen's d = (mean_wrong - mean_correct) / pooled_std."""
+    n_w, n_c = len(H_wrong), len(H_correct)
     if n_w < 2 or n_c < 2:
         return np.nan
-    
-    mean_w = np.mean(H_wrong)
-    mean_c = np.mean(H_correct)
-    
-    var_w = np.var(H_wrong, ddof=1)
-    var_c = np.var(H_correct, ddof=1)
-    
-    # Pooled standard deviation
-    pooled_std = np.sqrt(((n_w - 1) * var_w + (n_c - 1) * var_c) / (n_w + n_c - 2))
-    
+    pooled_std = np.sqrt(
+        ((n_w - 1) * np.var(H_wrong, ddof=1) + (n_c - 1) * np.var(H_correct, ddof=1))
+        / (n_w + n_c - 2)
+    )
     if pooled_std == 0:
         return np.nan
-    
-    cohens_d = (mean_w - mean_c) / pooled_std
-    return cohens_d
+    return (np.mean(H_wrong) - np.mean(H_correct)) / pooled_std
 
 
 def calc_entropy(probs):
-    """Calculate entropy per node."""
+    """Entropy per node."""
     return -np.sum(probs * np.log(probs + 1e-10), axis=1)
 
 
-def compute_separability_from_classifier_outputs(dataset, model, K, seed, loss_type, split='val'):
+# ---------------------------------------------------------------------------
+# Core computation
+# ---------------------------------------------------------------------------
+
+HETERO_DATASETS = {"Roman-empire", "Squirrel"}
+
+# Mapping of known directory-name truncations → human-readable labels.
+# (build_loss_dir used :.1f which rounds 0.25 → "0.2" via banker's rounding)
+_BAND_LABEL_FIXES = {
+    "band-1.5to0.2":  "band-1.5to0.25",
+    "band-1.0to0.0":  "band-1.0to0.0",   # already correct
+}
+
+
+def _pretty_loss_label(loss_type: str) -> str:
+    """Return a human-readable version of a loss_type directory name."""
+    label = loss_type
+    for old, new in _BAND_LABEL_FIXES.items():
+        label = label.replace(old, new)
+    return label
+
+
+def compute_separability_from_classifier_outputs(dataset, model, K, seed, loss_type,
+                                                  split='val',
+                                                  classifier_heads_dir=None,
+                                                  split_id=None):
     """
-    Compute separability metrics from classifier head outputs.
-    
-    Args:
-        dataset: Dataset name
-        model: Model name
-        K: Number of layers
-        seed: Random seed
-        loss_type: Loss type directory name
-        split: 'val' or 'test'
-    
-    Returns:
-        DataFrame with metrics for each layer
+    Compute separability metrics from layer_probs.npz for a single (seed, K).
+
+    Returns (df_aggregate, df_per_class, num_classes).
     """
-    # Load the dataset to get labels
     from src.datasets import load_dataset as load_ds
     data_obj, num_classes, _ = load_ds(
-        dataset,
-        root_dir='data',
-        planetoid_normalize=False,
-        planetoid_split='public'
+        dataset, root_dir='data', planetoid_normalize=False, planetoid_split='public'
     )
-    
+
     labels = data_obj.y.numpy()
-    if split == 'val':
-        split_mask = data_obj.val_mask.numpy()
+    # For heterophilous datasets the masks are 2-D [N x 10]; select the right split column
+    val_mask_raw   = data_obj.val_mask
+    test_mask_raw  = data_obj.test_mask
+    train_mask_raw = data_obj.train_mask
+    if split_id is not None and val_mask_raw.dim() == 2:
+        vm = val_mask_raw[:, split_id].numpy()
+        tm = test_mask_raw[:, split_id].numpy()
+        trm = train_mask_raw[:, split_id].numpy() if train_mask_raw.dim() == 2 else train_mask_raw.numpy()
     else:
-        split_mask = data_obj.test_mask.numpy()
-    
+        vm  = val_mask_raw.numpy()   if val_mask_raw.dim()   == 1 else val_mask_raw[:,   0].numpy()
+        tm  = test_mask_raw.numpy()  if test_mask_raw.dim()  == 1 else test_mask_raw[:,  0].numpy()
+        trm = train_mask_raw.numpy() if train_mask_raw.dim() == 1 else train_mask_raw[:, 0].numpy()
+    if split == 'val':
+        split_mask = vm
+    elif split == 'test':
+        split_mask = tm
+    else:  # 'train'
+        split_mask = trm
     labels_split = labels[split_mask]
-    
-    # Load classifier outputs
-    probs_path = Path(cfg.classifier_heads_dir) / loss_type / dataset / model / f'seed_{seed}' / f'K_{K}' / 'layer_probs.npz'
+
+    heads_dir = Path(classifier_heads_dir) if classifier_heads_dir else Path(cfg.classifier_heads_dir)
+    base_dir  = heads_dir / loss_type / dataset / model / f'seed_{seed}' / f'K_{K}'
+    if split_id is not None:
+        base_dir = base_dir / f'split_{split_id}'
+    probs_path = base_dir / 'layer_probs.npz'
     if not probs_path.exists():
         raise FileNotFoundError(f"Classifier outputs not found: {probs_path}")
-    
+
     probs_data = np.load(probs_path)
-    
-    # Compute metrics for each layer
-    results = []
-    per_class_metrics = []  # Store per-class data for plotting
-    
+    results, per_class_metrics = [], []
+
     for k in range(K + 1):
-        # Load probabilities for this layer
-        probs_k = probs_data[f'{split}_probs_{k}']
-        
-        # Compute predictions
-        preds_k = probs_k.argmax(axis=1)
-        
-        # Compute correctness
-        correct = (preds_k == labels_split).astype(int)
-        errors = 1 - correct
-        
-        # Compute entropy
+        probs_k   = probs_data[f'{split}_probs_{k}']
+        preds_k   = probs_k.argmax(axis=1)
+        correct   = (preds_k == labels_split).astype(int)
         entropy_k = calc_entropy(probs_k)
-        
-        # Compute AUROC
-        auroc = compute_auroc_torchmetrics(entropy_k, errors)
-        
-        # Compute Cohen's d
         H_correct = entropy_k[correct == 1]
-        H_wrong = entropy_k[correct == 0]
-        cohens_d = compute_cohens_d(H_wrong, H_correct)
-        
-        # Compute accuracy
-        accuracy = correct.mean()
-        
-        # Compute mean entropy
-        mean_entropy = entropy_k.mean()
-        mean_entropy_correct = H_correct.mean() if len(H_correct) > 0 else np.nan
-        mean_entropy_wrong = H_wrong.mean() if len(H_wrong) > 0 else np.nan
-        
-        # Per-class metrics
+        H_wrong   = entropy_k[correct == 0]
+
         per_class_data = {'k': k}
         for c in range(num_classes):
-            class_mask = (labels_split == c)
-            n_class_total = class_mask.sum()
-            
-            if n_class_total > 0:
-                class_probs = probs_k[class_mask]
-                class_preds = preds_k[class_mask]
-                class_correct = (class_preds == c).astype(int)
-                class_entropy = calc_entropy(class_probs)
-                
-                n_class_correct = class_correct.sum()
-                n_class_wrong = n_class_total - n_class_correct
-                
-                # Per-class accuracy
-                class_accuracy = class_correct.mean()
-                
-                # Per-class Cohen's d (requires at least 2 samples in each group)
-                H_c_correct = class_entropy[class_correct == 1]
-                H_c_wrong = class_entropy[class_correct == 0]
-                class_cohens_d = compute_cohens_d(H_c_wrong, H_c_correct) if len(H_c_correct) >= 2 and len(H_c_wrong) >= 2 else np.nan
-                
-                # Per-class mean entropy
-                class_mean_entropy = class_entropy.mean()
-                
-                per_class_data[f'class_{c}_accuracy'] = class_accuracy
-                per_class_data[f'class_{c}_cohens_d'] = class_cohens_d
-                per_class_data[f'class_{c}_entropy'] = class_mean_entropy
-                per_class_data[f'class_{c}_n_total'] = n_class_total
-                per_class_data[f'class_{c}_n_correct'] = n_class_correct
-                per_class_data[f'class_{c}_n_wrong'] = n_class_wrong
+            mask = (labels_split == c)
+            n    = mask.sum()
+            if n > 0:
+                cp = probs_k[mask]; cc = (preds_k[mask] == c).astype(int)
+                per_class_data[f'class_{c}_accuracy']  = cc.mean()
+                per_class_data[f'class_{c}_entropy']   = calc_entropy(cp).mean()
+                per_class_data[f'class_{c}_n_total']   = n
+                per_class_data[f'class_{c}_n_correct'] = cc.sum()
+                per_class_data[f'class_{c}_n_wrong']   = n - cc.sum()
             else:
-                per_class_data[f'class_{c}_accuracy'] = np.nan
-                per_class_data[f'class_{c}_cohens_d'] = np.nan
-                per_class_data[f'class_{c}_entropy'] = np.nan
-                per_class_data[f'class_{c}_n_total'] = 0
-                per_class_data[f'class_{c}_n_correct'] = 0
-                per_class_data[f'class_{c}_n_wrong'] = 0
-        
+                for col in ['accuracy', 'entropy']:
+                    per_class_data[f'class_{c}_{col}'] = np.nan
+                for col in ['n_total', 'n_correct', 'n_wrong']:
+                    per_class_data[f'class_{c}_{col}'] = 0
+
         per_class_metrics.append(per_class_data)
-        
         results.append({
-            'k': k,
-            'accuracy': accuracy,
-            'auroc': auroc,
-            'cohens_d': cohens_d,
-            'mean_entropy': mean_entropy,
-            'mean_entropy_correct': mean_entropy_correct,
-            'mean_entropy_wrong': mean_entropy_wrong,
+            'k':                    k,
+            'accuracy':             correct.mean(),
+            'auroc':                compute_auroc_torchmetrics(entropy_k, 1 - correct),
+            'cohens_d':             compute_cohens_d(H_wrong, H_correct),
+            'mean_entropy':         entropy_k.mean(),
+            'mean_entropy_correct': H_correct.mean() if len(H_correct) > 0 else np.nan,
+            'mean_entropy_wrong':   H_wrong.mean()   if len(H_wrong)   > 0 else np.nan,
             'n_correct': len(H_correct),
-            'n_wrong': len(H_wrong)
+            'n_wrong':   len(H_wrong),
         })
-    
+
     return pd.DataFrame(results), pd.DataFrame(per_class_metrics), num_classes
 
 
-def plot_separability_vs_k(df, df_per_class, num_classes, dataset, model, K, seed, loss_type, output_dir):
-    """Plot separability metrics vs layer depth with per-class analysis."""
-    
-    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
-    fig.suptitle(f'Separability Metrics: {dataset} {model} K={K} seed={seed}\n{loss_type}',
-                 fontsize=14, fontweight='bold')
-    
-    layers = df['k'].values
-    
-    # Plot 1: Accuracy
-    ax = axes[0, 0]
-    ax.plot(layers, df['accuracy'], 'o-', linewidth=2, markersize=8, color='C0')
-    ax.set_xlabel('Layer Depth (k)', fontsize=11, fontweight='bold')
-    ax.set_ylabel('Accuracy', fontsize=11, fontweight='bold')
-    ax.set_title('Validation Accuracy by Layer', fontsize=12, fontweight='bold')
-    ax.grid(alpha=0.3)
-    ax.set_ylim([0, 1])
-    
-    # Plot 2: AUROC
-    ax = axes[0, 1]
-    ax.plot(layers, df['auroc'], 's-', linewidth=2, markersize=8, color='C1')
-    ax.set_xlabel('Layer Depth (k)', fontsize=11, fontweight='bold')
-    ax.set_ylabel('AUROC', fontsize=11, fontweight='bold')
-    ax.set_title('AUROC for Error Detection', fontsize=12, fontweight='bold')
-    ax.grid(alpha=0.3)
-    ax.set_ylim([0, 1])
-    ax.axhline(0.5, color='gray', linestyle='--', alpha=0.5, label='Random')
-    ax.legend()
-    
-    # Plot 3: Cohen's d
-    ax = axes[1, 0]
-    ax.plot(layers, df['cohens_d'], '^-', linewidth=2, markersize=8, color='C2')
-    ax.set_xlabel('Layer Depth (k)', fontsize=11, fontweight='bold')
-    ax.set_ylabel("Cohen's d", fontsize=11, fontweight='bold')
-    ax.set_title("Cohen's d (Effect Size)", fontsize=12, fontweight='bold')
-    ax.grid(alpha=0.3)
-    ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
-    
-    # Plot 4: Mean entropy (correct vs wrong)
-    ax = axes[1, 1]
-    ax.plot(layers, df['mean_entropy_correct'], 'o-', linewidth=2, markersize=6, 
-            label='Correct', color='green', alpha=0.7)
-    ax.plot(layers, df['mean_entropy_wrong'], 's-', linewidth=2, markersize=6,
-            label='Wrong', color='red', alpha=0.7)
-    ax.set_xlabel('Layer Depth (k)', fontsize=11, fontweight='bold')
-    ax.set_ylabel('Mean Entropy', fontsize=11, fontweight='bold')
-    ax.set_title('Mean Entropy: Correct vs Wrong', fontsize=12, fontweight='bold')
-    ax.grid(alpha=0.3)
-    ax.legend()
-    
-    # Plot 5: Per-class validation accuracy
-    ax = axes[2, 0]
-    colors = plt.cm.tab10(np.arange(num_classes))
-    for c in range(num_classes):
-        accuracy_col = f'class_{c}_accuracy'
-        if accuracy_col in df_per_class.columns:
-            ax.plot(df_per_class['k'], df_per_class[accuracy_col], 
-                   'o-', linewidth=1.5, markersize=5, label=f'Class {c}', color=colors[c])
-    ax.set_xlabel('Layer Depth (k)', fontsize=11, fontweight='bold')
-    ax.set_ylabel('Per-Class Accuracy', fontsize=11, fontweight='bold')
-    ax.set_title('Per-Class Validation Accuracy by Layer', fontsize=12, fontweight='bold')
-    ax.grid(alpha=0.3)
-    ax.set_ylim([0, 1.05])
-    # No legend for clarity
-    
-    # Plot 6: Per-class mean entropy (with detailed legend)
-    ax = axes[2, 1]
-    
-    # Get node counts from last layer (k=K) for legend
-    last_layer_idx = df_per_class[df_per_class['k'] == K].index[0]
-    
-    # Sort classes by total node count for legend ordering
-    class_sizes = []
-    for c in range(num_classes):
-        n_total = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_total'])
-        class_sizes.append((c, n_total))
-    
-    # Sort by n_total (ascending)
-    class_sizes.sort(key=lambda x: x[1])
-    sorted_classes = [c for c, _ in class_sizes]
-    
-    for c in sorted_classes:
-        entropy_col = f'class_{c}_entropy'
-        if entropy_col in df_per_class.columns:
-            # Get counts for this class
-            n_total = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_total'])
-            n_correct = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_correct'])
-            n_wrong = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_wrong'])
-            
-            label = f'C{c} (n={n_total}: {n_correct}✓/{n_wrong}✗)'
-            ax.plot(df_per_class['k'], df_per_class[entropy_col],
-                   'o-', linewidth=1.5, markersize=5, label=label, color=colors[c])
-    
-    ax.set_xlabel('Layer Depth (k)', fontsize=11, fontweight='bold')
-    ax.set_ylabel('Per-Class Mean Entropy', fontsize=11, fontweight='bold')
-    ax.set_title('Per-Class Mean Entropy by Layer', fontsize=12, fontweight='bold')
-    ax.grid(alpha=0.3)
-    ax.legend(fontsize=9, ncol=1, loc='best')
-    
-    plt.tight_layout()
-    
-    # Save
-    output_path = output_dir / f'{dataset}_{model}_k{K}_seed{seed}_separability_{loss_type}.png'
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f'✓ Separability plot saved to: {output_path}')
-    plt.close()
+# ---------------------------------------------------------------------------
+# Plotting  — layout matches separability_metrics.py exactly
+# ---------------------------------------------------------------------------
 
+def _plot_mean_std(ax, kv, m, s, color, label, marker='o'):
+    ax.plot(kv, m, f'{marker}-', label=label, color=color, linewidth=2)
+    ax.fill_between(kv, m - s, m + s, alpha=0.2, color=color)
+
+
+def plot_separability_vs_k(df, df_per_class, num_classes, dataset, model, K,
+                            seeds_used, loss_type, output_dir):
+    """
+    6-panel figure — same layout as separability_metrics.py:
+        [0,0] AUROC              [0,1] Cohen's d
+        [1,0] Validation Acc     [1,1] Mean Entropy correct vs incorrect
+        [2,0] Per-Class Acc      [2,1] Per-Class Entropy
+    """
+    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
+    colors = plt.cm.tab10(np.arange(max(num_classes, 10)))
+
+    layers   = df['k'].values
+    have_agg = 'auroc_mean' in df.columns     # True when multiple seeds were aggregated
+
+    def get_m_s(col):
+        if have_agg:
+            return df[f'{col}_mean'].values, df[f'{col}_std'].fillna(0).values
+        return df[col].values, np.zeros(len(df))
+
+    seed_lbl = (f"Mean (n={len(seeds_used)} seeds)" if len(seeds_used) > 1
+                else f"seed {seeds_used[0]}")
+
+    # [0,0]  AUROC
+    ax = axes[0, 0]
+    _plot_mean_std(ax, layers, *get_m_s('auroc'), 'tab:blue', seed_lbl)
+    ax.axhline(0.5, color='gray', linestyle='--', alpha=0.5, label='Random')
+    ax.set(xlabel='Depth k', ylabel='AUROC',
+           title='Error Detection AUROC vs Depth', ylim=[0, 1])
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+    # [0,1]  Cohen's d
+    ax = axes[0, 1]
+    _plot_mean_std(ax, layers, *get_m_s('cohens_d'), 'tab:orange', seed_lbl)
+    ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+    ax.set(xlabel='Depth k', ylabel="Cohen's d",
+           title="Entropy Separability (Cohen's d) vs Depth")
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+    # [1,0]  Validation Accuracy
+    ax = axes[1, 0]
+    _plot_mean_std(ax, layers, *get_m_s('accuracy'), 'tab:green', seed_lbl)
+    ax.set(xlabel='Depth k', ylabel='Accuracy',
+           title='Validation Accuracy vs Depth', ylim=[0, 1])
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+    # [1,1]  Mean Entropy correct vs incorrect
+    ax = axes[1, 1]
+    _plot_mean_std(ax, layers, *get_m_s('mean_entropy_correct'), 'tab:blue', 'Correct', 'o')
+    _plot_mean_std(ax, layers, *get_m_s('mean_entropy_wrong'),   'tab:red',  'Incorrect', 's')
+    ax.set(xlabel='Depth k', ylabel='Mean Entropy',
+           title='Mean Entropy: Correct vs Incorrect')
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+    # Per-class panels
+    if df_per_class is not None:
+        pc_k      = df_per_class['k'].values
+        have_pc   = 'class_0_accuracy_mean' in df_per_class.columns
+        have_pc_r = (not have_pc) and 'class_0_accuracy' in df_per_class.columns
+
+        n_by_c = {}
+        for c in range(num_classes):
+            col  = f'class_{c}_n_total'
+            colm = f'class_{c}_n_total_mean' if have_pc else col
+            if colm in df_per_class.columns:
+                n_by_c[c] = int(df_per_class[colm].iloc[0])
+            elif col in df_per_class.columns:
+                n_by_c[c] = int(df_per_class[col].iloc[0])
+            else:
+                n_by_c[c] = 0
+
+        sc = sorted(range(num_classes), key=lambda c: n_by_c.get(c, 0))
+
+        for panel_col, metric in [(0, 'accuracy'), (1, 'entropy')]:
+            ax = axes[2, panel_col]
+            for c in sc:
+                col_name = f'class_{c}_{metric}'
+                if have_pc:
+                    m = df_per_class[f'{col_name}_mean'].values
+                    s = df_per_class[f'{col_name}_std'].fillna(0).values
+                elif have_pc_r:
+                    m = df_per_class[col_name].values
+                    s = np.zeros_like(m)
+                else:
+                    continue
+                n = n_by_c.get(c, 0)
+                ax.plot(pc_k, m, 'o-', linewidth=1.5, markersize=5,
+                        label=f'C{c} (n={n})', color=colors[c])
+                ax.fill_between(pc_k, m - s, m + s, alpha=0.12, color=colors[c])
+
+            if metric == 'accuracy':
+                ax.set(xlabel='Depth k', ylabel='Per-Class Accuracy',
+                       title='Per-Class Validation Accuracy by Depth', ylim=[0, 1.05])
+                ax.grid(True, alpha=0.3)
+            else:
+                ax.set(xlabel='Depth k', ylabel='Per-Class Mean Entropy',
+                       title='Per-Class Mean Entropy by Depth')
+                ax.grid(True, alpha=0.3)
+                ax.legend(fontsize=9, ncol=1, loc='best')
+    else:
+        axes[2, 0].set_visible(False)
+        axes[2, 1].set_visible(False)
+
+    seeds_str = ", ".join(str(s) for s in seeds_used)
+    if len(seeds_used) == 1:
+        subtitle = f"Seed {seeds_used[0]}"
+    else:
+        subtitle = f"Mean +/- Std across Seeds ({seeds_str})"
+    label = _pretty_loss_label(loss_type)
+    fig.suptitle(
+        f"Classifier Head Analysis: {model}, {dataset}, {label}\n{subtitle}",
+        fontsize=13, fontweight='bold', y=1.01
+    )
+    plt.tight_layout()
+
+    out = output_dir / f'{dataset}_{model}_k{K}_seed_all_{loss_type}_separability_vs_k_per_class.png'
+    plt.savefig(out, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f'Saved -> {out}')
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description='Compute separability metrics from classifier head outputs')
-    parser.add_argument('--dataset', type=str, required=True)
-    parser.add_argument('--model', type=str, required=True)
-    parser.add_argument('--K', type=int, default=8)
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--loss-type', type=str, required=True,
-                       help='Loss type directory name (e.g., ce_plus_R_R1.0_hard)')
-    parser.add_argument('--split', type=str, default='val', choices=['val', 'test'])
-    
-    args = parser.parse_args()
-    
-    print(f'\n{"="*60}')
-    print(f'Separability Metrics (Classifier Heads): {args.model} on {args.dataset}')
-    print(f'  K={args.K}, seed={args.seed}, loss_type={args.loss_type}, split={args.split}')
-    print(f'{"="*60}\n')
-    
-    # Compute metrics
-    print('Computing separability metrics...')
-    df, df_per_class, num_classes = compute_separability_from_classifier_outputs(
-        args.dataset, args.model, args.K, args.seed, args.loss_type, args.split
+    parser = argparse.ArgumentParser(
+        description='Compute separability metrics from classifier head outputs'
     )
-    
-    print('\nResults:')
-    print(df.to_string(index=False))
-    
-    # Save CSV
-    output_dir = Path(cfg.tables_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / f'{args.dataset}_{args.model}_K{args.K}_seed{args.seed}_{args.loss_type}_separability.csv'
-    df.to_csv(csv_path, index=False)
-    print(f'\n✓ Results saved to: {csv_path}')
-    
-    # Generate plot
-    plot_dir = Path(cfg.figures_dir) / args.dataset / args.model / f'K_{args.K}'
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    plot_separability_vs_k(df, df_per_class, num_classes, args.dataset, args.model, args.K, args.seed, args.loss_type, plot_dir)
-    
+    parser.add_argument('--dataset',              type=str, required=True)
+    parser.add_argument('--model',                type=str, default='GCN')
+    parser.add_argument('--K',                    type=int, default=8)
+    parser.add_argument('--seed',                 type=str, default='0',
+                        help='Seed value, comma-separated list, or "all"')
+    parser.add_argument('--loss-type',            type=str, required=True,
+                        help='Loss-type directory name (e.g. ce_only)')
+    parser.add_argument('--split',                type=str, default='val',
+                        choices=['val', 'test'])
+    parser.add_argument('--classifier-heads-dir', type=str, default=None,
+                        help='Override cfg.classifier_heads_dir '
+                             '(e.g. D:/GCN_eval/classifier_heads)')
+    parser.add_argument('--split-id', type=int, default=None,
+                        help='Split index for heterophilous datasets. '
+                             'If not set, auto-detected from dataset name.')
+    args = parser.parse_args()
+
+    if args.classifier_heads_dir:
+        cfg.classifier_heads_dir = args.classifier_heads_dir
+
+    seeds = (list(cfg.seeds) if args.seed.lower() == 'all'
+             else [int(s) for s in args.seed.split(',')])
+
     print(f'\n{"="*60}')
-    print('✓ Separability analysis complete')
-    print(f'{"="*60}')
+    print(f'Separability Metrics: {args.model} on {args.dataset}')
+    print(f'  K={args.K}  seeds={seeds}  loss_type={args.loss_type}  split={args.split}')
+    print(f'{"="*60}\n')
+
+    # Auto-detect split_id for heterophilous datasets
+    split_id = args.split_id
+    if split_id is None and args.dataset in HETERO_DATASETS:
+        split_id = 0
+        print(f'  [INFO] Heterophilous dataset detected — using split_id={split_id}')
+
+    all_dfs, all_pc_dfs, num_classes = [], [], None
+
+    for seed in seeds:
+        print(f'  Processing seed {seed} ...')
+        try:
+            df, df_pc, nc = compute_separability_from_classifier_outputs(
+                args.dataset, args.model, args.K, seed,
+                args.loss_type, args.split, args.classifier_heads_dir,
+                split_id=split_id
+            )
+            df['seed'] = seed
+            df_pc['seed'] = seed
+            all_dfs.append(df)
+            all_pc_dfs.append(df_pc)
+            num_classes = nc
+        except FileNotFoundError as exc:
+            print(f'  [SKIP] {exc}')
+
+    if not all_dfs:
+        print('No data found — check that layer_probs.npz files exist.')
+        return
+
+    output_dir = Path(cfg.figures_dir) / args.dataset / args.model / f'K_{args.K}'
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Aggregate across seeds if multiple
+    if len(all_dfs) == 1:
+        df_plot    = all_dfs[0]
+        df_pc_plot = all_pc_dfs[0]
+    else:
+        combined  = pd.concat(all_dfs, ignore_index=True)
+        agg_cols  = ['auroc', 'cohens_d', 'accuracy',
+                     'mean_entropy_correct', 'mean_entropy_wrong']
+        agg = combined.groupby('k')[agg_cols].agg(['mean', 'std']).reset_index()
+        agg.columns = ['k'] + [f'{c}_{s}' for c, s in agg.columns[1:]]
+        df_plot = agg
+
+        comb_pc   = pd.concat(all_pc_dfs, ignore_index=True)
+        pc_acc    = [c for c in comb_pc.columns
+                     if c.startswith('class_') and c.endswith('_accuracy')]
+        pc_ent    = [c for c in comb_pc.columns
+                     if c.startswith('class_') and c.endswith('_entropy')]
+        pc_n      = [c for c in comb_pc.columns
+                     if c.startswith('class_') and c.endswith('_n_total')]
+        pc_agg = comb_pc.groupby('k')[pc_acc + pc_ent].agg(['mean', 'std']).reset_index()
+        pc_agg.columns = ['k'] + [f'{c}_{s}' for c, s in pc_agg.columns[1:]]
+        for col in pc_n:
+            pc_agg[col] = int(all_pc_dfs[0][col].iloc[0])
+        df_pc_plot = pc_agg
+
+    # Save CSV
+    tables_dir = Path(cfg.tables_dir)
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = tables_dir / (f'{args.dataset}_{args.model}_K{args.K}'
+                              f'_seeds{"_".join(str(s) for s in seeds)}'
+                              f'_{args.loss_type}_separability.csv')
+    df_plot.to_csv(csv_path, index=False)
+    print(f'\nCSV saved -> {csv_path}')
+
+    plot_separability_vs_k(
+        df_plot, df_pc_plot, num_classes,
+        args.dataset, args.model, args.K,
+        seeds, args.loss_type, output_dir
+    )
+
+    print(f'\n{"="*60}\nDone\n{"="*60}')
 
 
 if __name__ == '__main__':

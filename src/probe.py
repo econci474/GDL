@@ -17,7 +17,7 @@ from src.metrics import compute_nll, compute_accuracy, entropy_from_probs, compu
 from src.utils import set_seed, get_device
 
 # Datasets that use split-based training (10 splits per configuration)
-HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire']
+HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire', 'Squirrel']
 
 
 def train_linear_probe(X_train, y_train, X_val, y_val, num_classes, weight_decay, seed, device, max_epochs=500):
@@ -338,6 +338,8 @@ def main():
     parser.add_argument('--K', type=int, default=8)
     parser.add_argument('--seed', type=str, default='0',
                        help='Random seed or "all" to run all seeds from config')
+    parser.add_argument('--split-id', type=int, default=-1,
+                       help='Split index to probe (heterophilous only). -1 = all splits (default).')
     
     args = parser.parse_args()
     
@@ -355,8 +357,12 @@ def main():
     for seed in seeds_to_run:
         # Check if dataset uses splits
         if args.dataset in HETEROPHILOUS_DATASETS:
-            # Process all 10 splits for heterophilous datasets
-            for split_id in range(10):
+            # Determine which splits to probe
+            if args.split_id >= 0:
+                splits_to_probe = [args.split_id]
+            else:
+                splits_to_probe = list(range(10))
+            for split_id in splits_to_probe:
                 probe_all_depths(args.dataset, args.model, args.K, seed, config, split_id=split_id)
         else:
             # Single probing for homophilous datasets

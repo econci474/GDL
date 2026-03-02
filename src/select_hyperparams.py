@@ -4,8 +4,10 @@ select_hyperparams.py — Select best hyperparameters from sweep_results.csv.
 For each (dataset, model, loss_type), finds the hyperparameter tuple that
 minimises the sum of best_val_loss across all K depths (and splits).
 
-Also generates per-band best_hyperparams CSVs for ce_plus_R so that
-both band configurations can be evaluated systematically.
+Also generates:
+  - Per-layer best_hyperparams CSVs (best val_acc per K value, with "_per_layer" suffix)
+  - Per-band best_hyperparams CSVs for ce_plus_R so that both band configurations
+    can be evaluated systematically.
 
 Usage:
     python src/select_hyperparams.py
@@ -64,6 +66,33 @@ def _best_per_group(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
+def _best_per_group_per_layer(df: pd.DataFrame) -> pd.DataFrame:
+    """For each (dataset, model, loss_type, K), pick the highest-mean-val-acc config."""
+    results = []
+    group_cols = ["dataset", "model", "loss_type", "K"]
+    for group_keys, group_df in df.groupby(group_cols):
+        dataset, model, loss_type, K = group_keys
+        agg = (
+            group_df
+            .groupby(HYPERPARAM_COLS, dropna=False)["best_val_acc"]
+            .agg(mean_val_acc="mean", n_runs_aggregated="count")
+            .reset_index()
+        )
+        best_row = agg.loc[agg["mean_val_acc"].idxmax()].to_dict()
+        result = {
+            "dataset": dataset, "model": model, "loss_type": loss_type, "K": K,
+            "mean_val_acc": best_row["mean_val_acc"],
+            "n_runs_aggregated": best_row["n_runs_aggregated"],
+        }
+        result.update({col: best_row[col] for col in HYPERPARAM_COLS})
+        results.append(result)
+        print(f"  {dataset}/{model}/{loss_type}/K={K}: "
+              f"best mean_val_acc={best_row['mean_val_acc']:.4f} "
+              f"lr={best_row['lr']}, wd={best_row['weight_decay']}, "
+              f"patience={best_row['patience']}")
+    return pd.DataFrame(results)
+
+
 def select_hyperparams(
     sweep_csv: Path,
     results_dir: Path,
@@ -74,9 +103,10 @@ def select_hyperparams(
     Select best hyperparameters from a sweep CSV.
 
     Outputs:
-      <results_dir>/best_hyperparams<suffix>.csv              — best overall
-      <results_dir>/best_hyperparams<suffix>_band-1.0to0.0.csv  — best for each ce_plus_R band
-      <results_dir>/best_hyperparams<suffix>_band-1.5to0.25.csv
+      <results_dir>/best_hyperparams<suffix>.csv                    — best overall (across all K)
+      <results_dir>/best_hyperparams<suffix>_per_layer.csv          — best per K layer
+      <results_dir>/best_hyperparams<suffix>_band-*.csv             — best for each ce_plus_R band
+      <results_dir>/best_hyperparams<suffix>_band-*_per_layer.csv   — per-band, per-K
     """
     if not sweep_csv.exists():
         raise FileNotFoundError(f"Sweep results not found: {sweep_csv}")
@@ -93,14 +123,21 @@ def select_hyperparams(
     results_dir.mkdir(parents=True, exist_ok=True)
     suf = f"_{model_suffix}" if model_suffix else ""
 
-    # ── 1. Overall best (all hyperparams free) ────────────────────────────
-    print("\n── Overall best hyperparameters ──")
+    # -- 1. Overall best (aggregated across all K) ----------------------------
+    print("\n-- Overall best hyperparameters (across all K) --")
     best_overall = _best_per_group(df)
     out = results_dir / f"best_hyperparams{suf}.csv"
     best_overall.to_csv(out, index=False)
     print(f"Saved -> {out}")
 
-    # ── 2. Per-band best for ce_plus_R ────────────────────────────────────
+    # -- 2. Per-layer best (best val_acc for each K) ---------------------------
+    print("\n-- Best hyperparameters per layer (per K) --")
+    best_per_layer = _best_per_group_per_layer(df)
+    out = results_dir / f"best_hyperparams{suf}_per_layer.csv"
+    best_per_layer.to_csv(out, index=False)
+    print(f"Saved -> {out}")
+
+    # -- 3. Per-band best for ce_plus_R ----------------------------------------
     ce_r_df = df[df["loss_type"] == "ce_plus_R"].copy()
     for band_lower, band_upper, band_label in CE_PLUS_R_BANDS:
         band_df = ce_r_df[
@@ -111,10 +148,16 @@ def select_hyperparams(
             print(f"\n  [SKIP] No data for ce_plus_R band ({band_lower}, {band_upper})")
             continue
 
-        print(f"\n── Best hyperparameters: ce_plus_R band ({band_lower}, {band_upper}) ──")
+        print(f"\n-- Best hyperparameters: ce_plus_R band ({band_lower}, {band_upper}) --")
         best_band = _best_per_group(band_df)
         out = results_dir / f"best_hyperparams{suf}_{band_label}.csv"
         best_band.to_csv(out, index=False)
+        print(f"Saved -> {out}")
+
+        print(f"\n-- Best hyperparameters per layer: ce_plus_R band ({band_lower}, {band_upper}) --")
+        best_band_per_layer = _best_per_group_per_layer(band_df)
+        out = results_dir / f"best_hyperparams{suf}_{band_label}_per_layer.csv"
+        best_band_per_layer.to_csv(out, index=False)
         print(f"Saved -> {out}")
 
     return best_overall

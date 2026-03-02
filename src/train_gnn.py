@@ -205,7 +205,7 @@ def run_one_split(
     pd.DataFrame(train_log).to_csv(output_dir / "train_log.csv", index=False)
 
     # Extract and save embeddings from the best model
-    print(f"\n💾 Extracting embeddings...")
+    print(f"\n[SAVE] Extracting embeddings...")
     checkpoint = torch.load(output_dir / "best.pt", map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
@@ -232,9 +232,9 @@ def run_one_split(
     embeddings_path = output_dir / "embeddings.pt"
     torch.save(embeddings_data, embeddings_path)
     size_mb = embeddings_path.stat().st_size / 1024 / 1024
-    print(f"  ✓ Embeddings saved: {embeddings_path.name} ({size_mb:.1f} MB, {len(embeddings_dict)} layers)")
+    print(f"  [OK] Embeddings saved: {embeddings_path.name} ({size_mb:.1f} MB, {len(embeddings_dict)} layers)")
 
-    print(f"\n✓ Split complete: {output_dir}")
+    print(f"\n[DONE] Split complete: {output_dir}")
     print(f"  Best epoch: {best_epoch}")
     print(f"  Best val loss: {best_val_loss:.4f}")
     print(f"  Best val acc:  {best_val_acc:.4f}")
@@ -382,7 +382,7 @@ def main():
 
     if args.seed.lower() == 'all':
         seeds_to_run = config['seeds']
-        print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
+        print(f"\n[INFO] Running all seeds: {seeds_to_run}\n")
     else:
         seeds_to_run = [int(args.seed)]
 

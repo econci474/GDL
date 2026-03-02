@@ -217,13 +217,14 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         class_mean_entropy[k] = class_H
         class_mean_p_correct[k] = class_P
     
-    # Create figure with an extra row for trajectory summary
     num_depths = len(k_list)
     ncols = min(3, num_depths)
-    nrows = int(np.ceil(num_depths / ncols)) + 1  # +1 for trajectory panel
-    
+    nrows_scatter = int(np.ceil(num_depths / ncols))
+    nrows = nrows_scatter + 1  # +1 for trajectory panel
+    height_ratios = [1] * nrows_scatter + [2]  # trajectory row is 2x taller
+
     fig = plt.figure(figsize=(5*ncols, 4*nrows))
-    gs = fig.add_gridspec(nrows, ncols, hspace=0.4, wspace=0.3)
+    gs = fig.add_gridspec(nrows, ncols, hspace=0.2, wspace=0.2, height_ratios=height_ratios)
     
     # Color map for classes
     colors = plt.cm.tab10(np.linspace(0, 1, num_classes))
@@ -273,61 +274,278 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         if idx == 0:
             ax.legend(loc='best', fontsize=8, framealpha=0.9)
     
-    # Add trajectory summary panel spanning bottom row
-    ax_traj = fig.add_subplot(gs[-1, :])
-    
-    # Plot trajectories for each class
-    for c in range(num_classes):
-        entropy_vals = [class_mean_entropy[k][c] for k in k_list if k in class_mean_entropy]
+    # --- Per-class trajectory panels -----------------------------------------
+    # Layout: num_classes panels arranged in (traj_rows x ncols) below scatter
+    traj_ncols    = ncols
+    traj_nrows    = int(np.ceil(num_classes / traj_ncols))
+    nrows_scatter = int(np.ceil(num_depths / ncols))
+    nrows         = nrows_scatter + traj_nrows
+    height_ratios = [1] * nrows_scatter + [1.1] * traj_nrows
+
+    # Rebuild figure with updated layout
+    plt.close(fig)
+    fig = plt.figure(figsize=(5 * ncols, 4.5 * nrows))
+    gs  = fig.add_gridspec(nrows, ncols, hspace=0.35, wspace=0.2,
+                           height_ratios=height_ratios)
+
+    # Re-draw the per-depth scatter panels
+    for idx, k in enumerate(k_list):
+        row = idx // ncols
+        col = idx % ncols
+        ax  = fig.add_subplot(gs[row, col])
+        if k not in all_probs or len(all_probs[k]) == 0:
+            continue
+        mean_probs = np.mean(all_probs[k], axis=0)
+        H          = entropy_from_probs(mean_probs)
+        p_correct  = mean_probs[np.arange(len(mean_probs)), plot_labels]
+        for c in range(num_classes):
+            cm = plot_labels == c
+            if cm.sum() > 0:
+                lbl = f'Class {c} (n={cm.sum()})' if k == 0 else f'Class {c}'
+                ax.scatter(H[cm], p_correct[cm], c=[colors[c]], label=lbl,
+                           alpha=0.6, s=20, edgecolors='none')
+        ax.set_xlabel('Mean Entropy', fontsize=10)
+        ax.set_ylabel('Mean P(Correct)', fontsize=10)
+        ax.set_title(f'Depth k={k}', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(left=0); ax.set_ylim(0, 1)
+        if idx == 0:
+            ax.legend(loc='best', fontsize=8, framealpha=0.9)
+
+    # Depth colormap (k=0 → blue, k=K → red)
+    depth_cmap = plt.cm.coolwarm
+    K_max_val  = max(k_list)
+    depth_norm = plt.Normalize(vmin=0, vmax=K_max_val)
+
+    # Sort classes by ascending n for trajectory panels
+    class_sizes   = sorted(range(num_classes), key=lambda c: int((plot_labels == c).sum()))
+    ax_last = None
+
+    for panel_idx, c in enumerate(class_sizes):
+        tr = nrows_scatter + panel_idx // traj_ncols
+        tc = panel_idx % traj_ncols
+        ax_c = fig.add_subplot(gs[tr, tc])
+
+        entropy_vals   = [class_mean_entropy[k][c]   for k in k_list if k in class_mean_entropy]
         p_correct_vals = [class_mean_p_correct[k][c] for k in k_list if k in class_mean_p_correct]
-        
-        if len(entropy_vals) > 0:
-            # Draw connecting line
-            ax_traj.plot(entropy_vals, p_correct_vals, '-', color=colors[c], 
-                        alpha=0.5, linewidth=2, zorder=1)
-            
-            # Draw points for each depth
-            for i, k in enumerate(k_list):
-                if k in class_mean_entropy:
-                    ax_traj.scatter(entropy_vals[i], p_correct_vals[i], 
-                                  c=[colors[c]], s=100, edgecolors='black', 
-                                  linewidth=1.5, zorder=2, alpha=0.8)
-                    # Annotate with k value
-                    if i == len(entropy_vals) - 1:  # Only label last point
-                        ax_traj.annotate(f'C{c}', (entropy_vals[i], p_correct_vals[i]),
-                                       xytext=(5, 5), textcoords='offset points',
-                                       fontsize=9, fontweight='bold', color=colors[c])
-    
-    ax_traj.set_xlabel('Mean Entropy', fontsize=12, fontweight='bold')
-    ax_traj.set_ylabel('Mean P(Correct Class)', fontsize=12, fontweight='bold')
-    ax_traj.set_title('Class Trajectory Summary (k=0 ? K)', fontsize=13, fontweight='bold')
-    ax_traj.grid(True, alpha=0.3)
-    ax_traj.set_xlim(left=0)
-    ax_traj.set_ylim(0, 1)
-    
-    # Add arrow showing direction
-    ax_traj.annotate('', xy=(0.95, 0.05), xytext=(0.85, 0.05),
-                    xycoords='axes fraction', textcoords='axes fraction',
-                    arrowprops=dict(arrowstyle='->', lw=2, color='gray'))
-    ax_traj.text(0.90, 0.08, 'Increasing\nDepth', transform=ax_traj.transAxes,
-                ha='center', fontsize=10, color='gray', style='italic')
-    
-    plt.suptitle(f'{dataset}/{model} (K={K}, seeds={seeds}, {split} set):\\n'
-                 f'Per-Node Mean Entropy vs Mean Correct-Class Probability',
-                 fontsize=14, y=0.995)
-    
-    # Save figure
+        k_vals         = [k for k in k_list if k in class_mean_entropy]
+
+        if len(entropy_vals) == 0:
+            ax_c.axis('off'); continue
+
+        # Individual node scatter for this class, colored by depth
+        for k in k_list:
+            if k not in all_probs or len(all_probs[k]) == 0:
+                continue
+            mean_probs = np.mean(all_probs[k], axis=0)
+            H          = entropy_from_probs(mean_probs)
+            p_correct  = mean_probs[np.arange(len(mean_probs)), plot_labels]
+            cm         = plot_labels == c
+            if cm.sum() > 0:
+                ax_c.scatter(H[cm], p_correct[cm],
+                             color=depth_cmap(depth_norm(k)),
+                             alpha=0.35, s=12, edgecolors='none', zorder=1)
+
+        # Mean trajectory line with arrows between consecutive depths
+        ax_c.plot(entropy_vals, p_correct_vals, '-',
+                  color=colors[c], alpha=0.6, linewidth=2, zorder=2)
+        for i in range(len(k_vals) - 1):
+            dx = entropy_vals[i+1] - entropy_vals[i]
+            dy = p_correct_vals[i+1] - p_correct_vals[i]
+            ax_c.annotate('', xy=(entropy_vals[i+1], p_correct_vals[i+1]),
+                          xytext=(entropy_vals[i], p_correct_vals[i]),
+                          arrowprops=dict(arrowstyle='->', color=colors[c],
+                                         lw=1.5, mutation_scale=12),
+                          zorder=3)
+
+        # Mark k=0 start with hollow circle, k=K end with filled circle
+        ax_c.scatter(entropy_vals[0], p_correct_vals[0],
+                     marker='o', s=55, facecolors='none',
+                     edgecolors=colors[c], linewidth=1.8, zorder=6,
+                     label='k=0 (start)')
+        ax_c.scatter(entropy_vals[-1], p_correct_vals[-1],
+                     marker='o', s=55, color=colors[c],
+                     edgecolors='black', linewidth=0.8, zorder=6,
+                     label=f'k={K_max_val} (end)')
+
+        n_class = int((plot_labels == c).sum())
+        ax_c.set_title(f'Class {c}  (n={n_class})', fontweight='bold', fontsize=11)
+        ax_c.set_xlabel('Mean Entropy', fontsize=9)
+        ax_c.set_ylabel('Mean P(Correct)', fontsize=9)
+        ax_c.grid(True, alpha=0.3)
+        ax_c.set_xlim(left=0); ax_c.set_ylim(0, 1)
+        # No fixed right xlim — auto-scale to match upper scatter panels
+        ax_c.legend(fontsize=7, loc='upper right', framealpha=0.85)
+        ax_last = ax_c
+
+    # Hide unused trajectory panels
+    for c in range(num_classes, traj_nrows * traj_ncols):
+        tr = nrows_scatter + c // traj_ncols
+        tc = c % traj_ncols
+        if tr < nrows:
+            fig.add_subplot(gs[tr, tc]).axis('off')
+
+    seeds_str = ', '.join(map(str, seeds))
+    fig.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability',
+        fontsize=14, fontweight='bold', y=0.985
+    )
+    # Use subplots_adjust instead of tight_layout — avoids the colorbar incompatibility warning
+    # and directly controls all spacing
+    fig.subplots_adjust(top=0.94, bottom=0.04, left=0.07, right=0.96,
+                        hspace=0.3, wspace=0.2)
+
+    # Colorbar next to last trajectory panel only, full height (added after tight_layout)
+    if ax_last is not None:
+        sm = plt.cm.ScalarMappable(cmap=depth_cmap, norm=depth_norm)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax_last, shrink=1.0, pad=0.04, aspect=15,
+                            location='right')
+        cbar.set_label('Depth k', fontsize=11)
+        cbar.set_ticks(k_list)
+
+
+    # ------------------------------------------------------------------ #
+    # Save combined figure                                                 #
+    # ------------------------------------------------------------------ #
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     if seed_mode == 'custom':
-        # Create not_seed_2 subfolder for custom seed lists
         figures_dir = figures_dir / 'not_seed_2'
     figures_dir.mkdir(parents=True, exist_ok=True)
-    
+
     seed_str = '_'.join(map(str, seeds)) if seed_mode == 'custom' else 'all'
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_{seed_str}_{split}_entropy_vs_prob_with_trajectories.png'
+    stem = f'{dataset}_{model}_k{K}_seed_{seed_str}_{split}'
+
+    output_path = figures_dir / f'{stem}_entropy_vs_prob_with_trajectories.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
+
+    # ------------------------------------------------------------------ #
+    # Layers-only figure (depth scatter panels)                           #
+    # ------------------------------------------------------------------ #
+    fig_l = plt.figure(figsize=(5 * ncols, 4 * nrows_scatter))
+    gs_l  = fig_l.add_gridspec(nrows_scatter, ncols, hspace=0.35, wspace=0.2)
+    for idx, k in enumerate(k_list):
+        ax = fig_l.add_subplot(gs_l[idx // ncols, idx % ncols])
+        if k not in all_probs or len(all_probs[k]) == 0:
+            continue
+        mean_probs = np.mean(all_probs[k], axis=0)
+        H          = entropy_from_probs(mean_probs)
+        p_correct  = mean_probs[np.arange(len(mean_probs)), plot_labels]
+        for c in range(num_classes):
+            cm = plot_labels == c
+            if cm.sum() > 0:
+                lbl = f'Class {c} (n={cm.sum()})' if k == 0 else f'Class {c}'
+                ax.scatter(H[cm], p_correct[cm], c=[colors[c]], label=lbl,
+                           alpha=0.6, s=20, edgecolors='none')
+        ax.set_xlabel('Mean Entropy', fontsize=10)
+        ax.set_ylabel('Mean P(Correct)', fontsize=10)
+        ax.set_title(f'Depth k={k}', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(left=0); ax.set_ylim(0, 1)
+        if idx == 0:
+            ax.legend(loc='best', fontsize=8, framealpha=0.9)
+    fig_l.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Layer',
+        fontsize=13, fontweight='bold'
+    )
+    top_l = min(0.90, 0.78 + 0.04 * max(nrows_scatter - 1, 0))
+    fig_l.subplots_adjust(top=top_l, bottom=0.06, left=0.07, right=0.97,
+                          hspace=0.35, wspace=0.2)
+    layers_path = figures_dir / f'{stem}_layers.png'
+    fig_l.savefig(layers_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {layers_path}")
+    plt.close(fig_l)
+
+    # ------------------------------------------------------------------ #
+    # Classes-only figure (trajectory panels)                             #
+    # ------------------------------------------------------------------ #
+    fig_c = plt.figure(figsize=(5 * traj_ncols, 4.5 * traj_nrows + 1.0))
+    gs_c  = fig_c.add_gridspec(traj_nrows, traj_ncols, hspace=0.35, wspace=0.2)
+    ax_last_c = None
+    for panel_idx, c in enumerate(class_sizes):
+        tr = panel_idx // traj_ncols
+        tc = panel_idx % traj_ncols
+        ax_c = fig_c.add_subplot(gs_c[tr, tc])
+
+        entropy_vals   = [class_mean_entropy[k][c]   for k in k_list if k in class_mean_entropy]
+        p_correct_vals = [class_mean_p_correct[k][c] for k in k_list if k in class_mean_p_correct]
+        k_vals         = [k for k in k_list if k in class_mean_entropy]
+
+        if len(entropy_vals) == 0:
+            ax_c.axis('off'); continue
+
+        for k in k_list:
+            if k not in all_probs or len(all_probs[k]) == 0:
+                continue
+            mean_probs = np.mean(all_probs[k], axis=0)
+            H          = entropy_from_probs(mean_probs)
+            p_correct  = mean_probs[np.arange(len(mean_probs)), plot_labels]
+            cm         = plot_labels == c
+            if cm.sum() > 0:
+                ax_c.scatter(H[cm], p_correct[cm],
+                             color=depth_cmap(depth_norm(k)),
+                             alpha=0.35, s=12, edgecolors='none', zorder=1)
+
+        ax_c.plot(entropy_vals, p_correct_vals, '-',
+                  color=colors[c], alpha=0.6, linewidth=2, zorder=2)
+        for i in range(len(k_vals) - 1):
+            dx = entropy_vals[i+1] - entropy_vals[i]
+            dy = p_correct_vals[i+1] - p_correct_vals[i]
+            ax_c.annotate('', xy=(entropy_vals[i+1], p_correct_vals[i+1]),
+                          xytext=(entropy_vals[i], p_correct_vals[i]),
+                          arrowprops=dict(arrowstyle='->', color=colors[c],
+                                         lw=1.5, mutation_scale=12),
+                          zorder=3)
+        ax_c.scatter(entropy_vals[0], p_correct_vals[0],
+                     marker='o', s=55, facecolors='none',
+                     edgecolors=colors[c], linewidth=1.8, zorder=6,
+                     label='k=0 (start)')
+        ax_c.scatter(entropy_vals[-1], p_correct_vals[-1],
+                     marker='o', s=55, color=colors[c],
+                     edgecolors='black', linewidth=0.8, zorder=6,
+                     label=f'k={K_max_val} (end)')
+
+        n_class = int((plot_labels == c).sum())
+        ax_c.set_title(f'Class {c}  (n={n_class})', fontweight='bold', fontsize=11)
+        ax_c.set_xlabel('Mean Entropy', fontsize=9)
+        ax_c.set_ylabel('Mean P(Correct)', fontsize=9)
+        ax_c.grid(True, alpha=0.3)
+        ax_c.set_xlim(left=0); ax_c.set_ylim(0, 1)
+        ax_c.legend(fontsize=7, loc='upper right', framealpha=0.85)
+        ax_last_c = ax_c
+
+    # Hide unused panels
+    for extra in range(num_classes, traj_nrows * traj_ncols):
+        tr = extra // traj_ncols
+        tc = extra % traj_ncols
+        if tr < traj_nrows:
+            fig_c.add_subplot(gs_c[tr, tc]).axis('off')
+
+    # Colorbar on the classes figure
+    if ax_last_c is not None:
+        sm = plt.cm.ScalarMappable(cmap=depth_cmap, norm=depth_norm)
+        sm.set_array([])
+        cbar_c = fig_c.colorbar(sm, ax=ax_last_c, shrink=1.0, pad=0.04, aspect=15,
+                                location='right')
+        cbar_c.set_label('Depth k', fontsize=11)
+        cbar_c.set_ticks(k_list)
+
+    top_c = 0.82 + 0.05 * (traj_nrows - 1)   # 0.82 for 1 row, 0.87 for 2, 0.92 for 3+
+    fig_c.subplots_adjust(top=top_c, bottom=0.08, left=0.07, right=0.96,
+                          hspace=0.3, wspace=0.2)
+    fig_c.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Class',
+        fontsize=13, fontweight='bold'
+    )
+    classes_path = figures_dir / f'{stem}_classes.png'
+    fig_c.savefig(classes_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {classes_path}")
+    plt.close(fig_c)
 
 
 def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val'):
@@ -592,13 +810,361 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     plt.close()
 
 
+def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
+                                   split_indices=None, split_sides=None):
+    """
+    Variant of plot_entropy_vs_prob_aggregated for datasets with multiple train/val/test splits
+    (e.g. Roman-Empire with split0–split9).  Pools all val+test observations across all splits
+    and all seeds, then plots them together.
+
+    File naming: {dataset}_{model}_K{K}_seed{seed}_split{split_idx}_pernode.npz
+    Keys inside: p_val_{k}, p_test_{k}  (and k_list)
+    """
+    from src.datasets import load_dataset
+    graph_data, _, _ = load_dataset(dataset)
+    labels = graph_data.y.numpy()
+
+    if split_indices is None:
+        split_indices = list(range(10))   # default: all 10 splits
+    if split_sides is None:
+        split_sides = ['val', 'test']     # default: pool both sides
+
+    # val_mask / test_mask are (N, num_splits) for multi-split datasets
+    val_mask_all  = graph_data.val_mask.numpy()   # (N, num_splits)
+    test_mask_all = graph_data.test_mask.numpy()  # (N, num_splits)
+    num_classes   = int(labels.max()) + 1
+
+    # ------------------------------------------------------------------ #
+    # Load data: average across seeds per (split_idx, side), then pool    #
+    # ------------------------------------------------------------------ #
+    per_key   = {}   # k -> {(split_idx, vt) -> list of seed probs}
+    label_key = {}   # (split_idx, vt) -> label array
+    k_list    = None
+
+    for seed in seeds:
+        for split_idx in split_indices:
+            arrays_path = (Path(config['results_dir']) / 'arrays' /
+                           f'{dataset}_{model}_K{K}_seed{seed}_split{split_idx}_pernode.npz')
+            if not arrays_path.exists():
+                print(f"  Warning: {arrays_path.name} not found, skipping")
+                continue
+            data = np.load(arrays_path)
+            if k_list is None:
+                k_list = data['k_list']
+
+            val_idx  = np.where(val_mask_all[:, split_idx])[0]
+            test_idx = np.where(test_mask_all[:, split_idx])[0]
+            side_map = {'val': val_idx, 'test': test_idx}
+
+            for k in k_list:
+                if k not in per_key:
+                    per_key[k] = {}
+                for vt in split_sides:
+                    p_key  = f'p_{vt}_{k}'
+                    idx    = side_map[vt]
+                    if p_key in data:
+                        key_id = (split_idx, vt)
+                        per_key[k].setdefault(key_id, []).append(data[p_key])
+                        if key_id not in label_key:
+                            label_key[key_id] = labels[idx]
+
+    if not per_key or k_list is None:
+        print("Error: No valid data found")
+        return
+
+    pooled_probs  = {}
+    pooled_labels = {}
+    for k in k_list:
+        probs_list, labels_list = [], []
+        for key_id, seed_probs in per_key.get(k, {}).items():
+            avg = np.mean(seed_probs, axis=0)    # (n_subset, C) averaged over seeds
+            probs_list.append(avg)
+            labels_list.append(label_key[key_id])
+        if probs_list:
+            pooled_probs[k]  = np.concatenate(probs_list, axis=0)
+            pooled_labels[k] = np.concatenate(labels_list, axis=0)
+
+    if not pooled_probs:
+        print("Error: pooled probs empty")
+        return
+
+    # ------------------------------------------------------------------ #
+    # Pre-compute per-class mean entropy and p_correct across all splits  #
+    # ------------------------------------------------------------------ #
+    class_mean_entropy   = {}
+    class_mean_p_correct = {}
+    for k in k_list:
+        if k not in pooled_probs:
+            continue
+        H         = entropy_from_probs(pooled_probs[k])
+        lab       = pooled_labels[k]
+        p_correct = pooled_probs[k][np.arange(len(lab)), lab]
+        class_H, class_P = np.zeros(num_classes), np.zeros(num_classes)
+        for c in range(num_classes):
+            cm = lab == c
+            if cm.sum() > 0:
+                class_H[c] = H[cm].mean()
+                class_P[c] = p_correct[cm].mean()
+        class_mean_entropy[k]   = class_H
+        class_mean_p_correct[k] = class_P
+
+    num_depths    = len(k_list)
+    ncols         = min(3, num_depths)
+    traj_ncols    = ncols
+    traj_nrows    = int(np.ceil(num_classes / traj_ncols))
+    nrows_scatter = int(np.ceil(num_depths / ncols))
+    nrows         = nrows_scatter + traj_nrows
+    height_ratios = [1] * nrows_scatter + [1.1] * traj_nrows
+
+    colors     = plt.cm.tab20(np.linspace(0, 1, num_classes))  # tab20 for 18 classes
+    depth_cmap = plt.cm.coolwarm
+    K_max_val  = max(k_list)
+    depth_norm = plt.Normalize(vmin=0, vmax=K_max_val)
+
+    fig = plt.figure(figsize=(5 * ncols, 4.5 * nrows))
+    gs  = fig.add_gridspec(nrows, ncols, hspace=0.35, wspace=0.2,
+                           height_ratios=height_ratios)
+
+    # ── Scatter panels (one per depth) ───────────────────────────────── #
+    for idx, k in enumerate(k_list):
+        ax = fig.add_subplot(gs[idx // ncols, idx % ncols])
+        if k not in pooled_probs:
+            continue
+        H         = entropy_from_probs(pooled_probs[k])
+        lab       = pooled_labels[k]
+        p_correct = pooled_probs[k][np.arange(len(lab)), lab]
+        for c in range(num_classes):
+            cm = lab == c
+            if cm.sum() > 0:
+                lbl = f'Class {c} (n={cm.sum()})' if k == 0 else f'Class {c}'
+                ax.scatter(H[cm], p_correct[cm], c=[colors[c]], label=lbl,
+                           alpha=0.4, s=10, edgecolors='none')
+        ax.set_xlabel('Mean Entropy', fontsize=10)
+        ax.set_ylabel('Mean P(Correct)', fontsize=10)
+        ax.set_title(f'Depth k={k}', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(left=0); ax.set_ylim(0, 1)
+        if idx == 0:
+            ax.legend(loc='best', fontsize=6, framealpha=0.9, ncol=2)
+
+    # ── Trajectory panels (one per class) ────────────────────────────── #
+    class_sizes = sorted(range(num_classes), key=lambda c: int((pooled_labels[k_list[0]] == c).sum())
+                         if k_list[0] in pooled_labels else 0)
+    ax_last = None
+
+    for panel_idx, c in enumerate(class_sizes):
+        tr   = nrows_scatter + panel_idx // traj_ncols
+        tc   = panel_idx % traj_ncols
+        ax_c = fig.add_subplot(gs[tr, tc])
+
+        entropy_vals   = [class_mean_entropy[k][c]   for k in k_list if k in class_mean_entropy]
+        p_correct_vals = [class_mean_p_correct[k][c] for k in k_list if k in class_mean_p_correct]
+        k_vals         = [k for k in k_list if k in class_mean_entropy]
+
+        if not entropy_vals:
+            ax_c.axis('off'); continue
+
+        for k in k_list:
+            if k not in pooled_probs:
+                continue
+            H         = entropy_from_probs(pooled_probs[k])
+            lab       = pooled_labels[k]
+            p_correct = pooled_probs[k][np.arange(len(lab)), lab]
+            cm        = lab == c
+            if cm.sum() > 0:
+                ax_c.scatter(H[cm], p_correct[cm],
+                             color=depth_cmap(depth_norm(k)),
+                             alpha=0.25, s=8, edgecolors='none', zorder=1)
+
+        ax_c.plot(entropy_vals, p_correct_vals, '-',
+                  color=colors[c], alpha=0.7, linewidth=2, zorder=2)
+        for i in range(len(k_vals) - 1):
+            ax_c.annotate('', xy=(entropy_vals[i+1], p_correct_vals[i+1]),
+                          xytext=(entropy_vals[i], p_correct_vals[i]),
+                          arrowprops=dict(arrowstyle='->', color=colors[c],
+                                         lw=1.5, mutation_scale=12), zorder=3)
+        ax_c.scatter(entropy_vals[0],  p_correct_vals[0],
+                     marker='o', s=55, facecolors='none',
+                     edgecolors=colors[c], linewidth=1.8, zorder=6, label='k=0 (start)')
+        ax_c.scatter(entropy_vals[-1], p_correct_vals[-1],
+                     marker='o', s=55, color=colors[c],
+                     edgecolors='black', linewidth=0.8, zorder=6,
+                     label=f'k={K_max_val} (end)')
+
+        n_class = int((pooled_labels[k_list[0]] == c).sum()) if k_list[0] in pooled_labels else '?'
+        ax_c.set_title(f'Class {c}  (n≈{n_class})', fontweight='bold', fontsize=10)
+        ax_c.set_xlabel('Mean Entropy', fontsize=8)
+        ax_c.set_ylabel('Mean P(Correct)', fontsize=8)
+        ax_c.grid(True, alpha=0.3)
+        ax_c.set_xlim(left=0); ax_c.set_ylim(0, 1)
+        ax_c.legend(fontsize=6, loc='upper right', framealpha=0.85)
+        ax_last = ax_c
+
+    # Hide unused trailing panels
+    for extra in range(num_classes, traj_nrows * traj_ncols):
+        tr = nrows_scatter + extra // traj_ncols
+        tc = extra % traj_ncols
+        if tr < nrows:
+            fig.add_subplot(gs[tr, tc]).axis('off')
+
+    seeds_str  = ', '.join(map(str, seeds))
+    splits_str = ('all_splits' if len(split_indices) > 1
+                  else f'split{split_indices[0]}')
+    sides_str  = '+'.join(split_sides)
+    fig.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {splits_str} ({sides_str})\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability',
+        fontsize=14, fontweight='bold', y=0.985
+    )
+    fig.subplots_adjust(top=0.94, bottom=0.04, left=0.07, right=0.96,
+                        hspace=0.3, wspace=0.2)
+
+    if ax_last is not None:
+        sm = plt.cm.ScalarMappable(cmap=depth_cmap, norm=depth_norm)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax_last, shrink=1.0, pad=0.04, aspect=15,
+                            location='right')
+        cbar.set_label('Depth k', fontsize=11)
+        cbar.set_ticks(k_list)
+
+    # ── Save combined figure ──────────────────────────────────────────── #
+    figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    seed_tag = 'all' if set(seeds) == set(config.get('seeds', seeds)) else '_'.join(map(str, seeds))
+    stem = f'{dataset}_{model}_k{K}_seed_{seed_tag}_{splits_str}_{sides_str}'
+
+    combined_path = figures_dir / f'{stem}_entropy_vs_prob_with_trajectories.png'
+    plt.savefig(combined_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {combined_path}")
+    plt.close()
+
+    # ── Layers-only figure ────────────────────────────────────────────── #
+    fig_l = plt.figure(figsize=(5 * ncols, 4 * nrows_scatter))
+    gs_l  = fig_l.add_gridspec(nrows_scatter, ncols, hspace=0.35, wspace=0.2)
+    for idx, k in enumerate(k_list):
+        ax = fig_l.add_subplot(gs_l[idx // ncols, idx % ncols])
+        if k not in pooled_probs:
+            continue
+        H         = entropy_from_probs(pooled_probs[k])
+        lab       = pooled_labels[k]
+        p_correct = pooled_probs[k][np.arange(len(lab)), lab]
+        for c in range(num_classes):
+            cm = lab == c
+            if cm.sum() > 0:
+                lbl = f'Class {c} (n={cm.sum()})' if k == 0 else f'Class {c}'
+                ax.scatter(H[cm], p_correct[cm], c=[colors[c]], label=lbl,
+                           alpha=0.4, s=10, edgecolors='none')
+        ax.set_xlabel('Mean Entropy', fontsize=10)
+        ax.set_ylabel('Mean P(Correct)', fontsize=10)
+        ax.set_title(f'Depth k={k}', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(left=0); ax.set_ylim(0, 1)
+        if idx == 0:
+            ax.legend(loc='best', fontsize=6, framealpha=0.9, ncol=2)
+    fig_l.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {splits_str} ({sides_str})\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Layer',
+        fontsize=13, fontweight='bold'
+    )
+    top_l = min(0.90, 0.78 + 0.04 * max(nrows_scatter - 1, 0))
+    fig_l.subplots_adjust(top=top_l, bottom=0.06, left=0.07, right=0.97,
+                          hspace=0.35, wspace=0.2)
+    layers_path = figures_dir / f'{stem}_layers.png'
+    fig_l.savefig(layers_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {layers_path}")
+    plt.close(fig_l)
+
+    # ── Classes-only figure ───────────────────────────────────────────── #
+    fig_c = plt.figure(figsize=(5 * traj_ncols, 4.5 * traj_nrows + 1.0))
+    gs_c  = fig_c.add_gridspec(traj_nrows, traj_ncols, hspace=0.35, wspace=0.2)
+    ax_last_c = None
+    for panel_idx, c in enumerate(class_sizes):
+        tr, tc = panel_idx // traj_ncols, panel_idx % traj_ncols
+        ax_c = fig_c.add_subplot(gs_c[tr, tc])
+
+        entropy_vals   = [class_mean_entropy[k][c]   for k in k_list if k in class_mean_entropy]
+        p_correct_vals = [class_mean_p_correct[k][c] for k in k_list if k in class_mean_p_correct]
+        k_vals         = [k for k in k_list if k in class_mean_entropy]
+
+        if not entropy_vals:
+            ax_c.axis('off'); continue
+
+        for k in k_list:
+            if k not in pooled_probs:
+                continue
+            H         = entropy_from_probs(pooled_probs[k])
+            lab       = pooled_labels[k]
+            p_correct = pooled_probs[k][np.arange(len(lab)), lab]
+            cm        = lab == c
+            if cm.sum() > 0:
+                ax_c.scatter(H[cm], p_correct[cm],
+                             color=depth_cmap(depth_norm(k)),
+                             alpha=0.25, s=8, edgecolors='none', zorder=1)
+
+        ax_c.plot(entropy_vals, p_correct_vals, '-',
+                  color=colors[c], alpha=0.7, linewidth=2, zorder=2)
+        for i in range(len(k_vals) - 1):
+            ax_c.annotate('', xy=(entropy_vals[i+1], p_correct_vals[i+1]),
+                          xytext=(entropy_vals[i], p_correct_vals[i]),
+                          arrowprops=dict(arrowstyle='->', color=colors[c],
+                                         lw=1.5, mutation_scale=12), zorder=3)
+        ax_c.scatter(entropy_vals[0],  p_correct_vals[0],
+                     marker='o', s=55, facecolors='none',
+                     edgecolors=colors[c], linewidth=1.8, zorder=6, label='k=0 (start)')
+        ax_c.scatter(entropy_vals[-1], p_correct_vals[-1],
+                     marker='o', s=55, color=colors[c],
+                     edgecolors='black', linewidth=0.8, zorder=6,
+                     label=f'k={K_max_val} (end)')
+
+        n_class = int((pooled_labels[k_list[0]] == c).sum()) if k_list[0] in pooled_labels else '?'
+        ax_c.set_title(f'Class {c}  (n≈{n_class})', fontweight='bold', fontsize=10)
+        ax_c.set_xlabel('Mean Entropy', fontsize=8)
+        ax_c.set_ylabel('Mean P(Correct)', fontsize=8)
+        ax_c.grid(True, alpha=0.3)
+        ax_c.set_xlim(left=0); ax_c.set_ylim(0, 1)
+        ax_c.legend(fontsize=6, loc='upper right', framealpha=0.85)
+        ax_last_c = ax_c
+
+    for extra in range(num_classes, traj_nrows * traj_ncols):
+        tr, tc = extra // traj_ncols, extra % traj_ncols
+        if tr < traj_nrows:
+            fig_c.add_subplot(gs_c[tr, tc]).axis('off')
+
+    if ax_last_c is not None:
+        sm = plt.cm.ScalarMappable(cmap=depth_cmap, norm=depth_norm)
+        sm.set_array([])
+        cbar_c = fig_c.colorbar(sm, ax=ax_last_c, shrink=1.0, pad=0.04,
+                                aspect=15, location='right')
+        cbar_c.set_label('Depth k', fontsize=11)
+        cbar_c.set_ticks(k_list)
+
+    top_c = min(0.96, 0.82 + 0.05 * (traj_nrows - 1))  # clamp to valid range
+    fig_c.subplots_adjust(top=top_c, bottom=0.06, left=0.07, right=0.96,
+                          hspace=0.3, wspace=0.2)
+    fig_c.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {splits_str} ({sides_str})\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Class',
+        fontsize=13, fontweight='bold'
+    )
+    classes_path = figures_dir / f'{stem}_classes.png'
+    fig_c.savefig(classes_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {classes_path}")
+    plt.close(fig_c)
+
+
+
 def main():
     parser = argparse.ArgumentParser(description='Plot entropy vs correct-class probability or correctness')
     parser.add_argument('--dataset', type=str, default='Cora')
     parser.add_argument('--model', type=str, default='GCN')
     parser.add_argument('--K', type=int, default=8)
     parser.add_argument('--seed', type=str, default='0', help='Seed, "all", or comma-separated list like "0,1,3"')
-    parser.add_argument('--split', type=str, default='val', choices=['val', 'test'])
+    parser.add_argument('--split', type=str, default='val', choices=['val', 'test', 'all'],
+                        help='"val", "test", or "all" (pools val+test). Use with --split_idx for single-split datasets.')
+    parser.add_argument('--split_idx', type=int, default=None,
+                        help='If set, only load data from this split index (e.g. 0 for split0). '
+                             'Works with multi-split datasets like Roman-Empire. '
+                             'Combine with --split val/test/all to control which side(s) are included.')
     parser.add_argument('--plot_type', type=str, default='probability', 
                        choices=['probability', 'correctness'],
                        help='Plot type: probability (per-class) or correctness (binary)')
@@ -633,10 +1199,23 @@ def main():
             print(f"Creating aggregated entropy vs correctness plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seeds={seeds}, split={args.split}")
             plot_entropy_vs_correctness_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode)
-        
+
     else:
         # Probability plot (per-class)
-        if seed_mode == 'single':
+        use_allsplits = (args.split == 'all') or (args.split_idx is not None)
+        if use_allsplits:
+            # Multi-split datasets (e.g. Roman-Empire): pool across split files
+            split_indices = [args.split_idx] if args.split_idx is not None else None  # None = all splits
+            split_sides   = ['val', 'test'] if args.split == 'all' else [args.split]
+            # allsplits always needs a list of seeds
+            seeds_for_allsplits = seeds if seeds is not None else [seed]
+            print(f"Creating all-splits entropy vs probability plot for {args.dataset}/{args.model}")
+            print(f"K={args.K}, seeds={seeds_for_allsplits}, split_indices={split_indices}, split_sides={split_sides}")
+            plot_entropy_vs_prob_allsplits(
+                args.dataset, args.model, args.K, seeds_for_allsplits, config,
+                split_indices=split_indices, split_sides=split_sides
+            )
+        elif seed_mode == 'single':
             print(f"Creating entropy vs probability plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seed={seed}, split={args.split}")
             plot_entropy_vs_prob(args.dataset, args.model, args.K, seed, config, args.split)
@@ -645,7 +1224,7 @@ def main():
             print(f"Creating aggregated entropy vs probability plot for {args.dataset}/{args.model}")
             print(f"K={args.K}, seeds={seeds}, split={args.split}")
             plot_entropy_vs_prob_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode)
-    
+
     print("\nDone!")
 
 

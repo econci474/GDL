@@ -431,48 +431,17 @@ def plot_separability_vs_depth(df, df_per_class, num_classes, summary, output_pa
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=9, ncol=1, loc='best')
     
-    # Mark special k values with vertical lines on first subplot
-    ax_first = axes[0, 0]
-    
-    # k_star_nll (baseline NLL method) - offset left
-    if 'k_star_nll' in summary:
-        ax_first.axvline(x=summary['k_star_nll'] - 0.1, color='purple', linestyle='-.', 
-                   alpha=0.6, linewidth=1.5, label=f'k*_nll={summary["k_star_nll"]}')
-    # k_star_combined (NLL + λ*entropy method) - offset right
-    if 'k_star_combined' in summary:
-        ax_first.axvline(x=summary['k_star_combined'] + 0.1, color='orange', linestyle=':', 
-                   alpha=0.6, linewidth=1.5, label=f'k*_combined={summary["k_star_combined"]}')
-    # k_star_top3 (top-3 accuracy, max AUROC) - no offset
-    if 'k_star_top3' in summary:
-        ax_first.axvline(x=summary['k_star_top3'], color='cyan', linestyle='-', 
-                   alpha=0.6, linewidth=1.5, label=f'k*_top3={summary["k_star_top3"]}')
-    # k_best_val_acc (best accuracy) - offset left
-    ax_first.axvline(x=summary['k_best_val_acc'] - 0.1, color='green', linestyle=':', 
-               alpha=0.5, label=f'k_best_acc={summary["k_best_val_acc"]}')
-    # k_star_sep (constrained separability method) - offset right
-    ax_first.axvline(x=summary['k_star_sep'] + 0.1, color='red', linestyle='--', 
-               alpha=0.7, linewidth=2, label=f'k*_sep={summary["k_star_sep"]}')
-    
-    # Add the same lines to all other subplots (without labels to avoid duplicates)
-    for ax in axes.flat:
-        if ax != ax_first:
-            if 'k_star_nll' in summary:
-                ax.axvline(x=summary['k_star_nll'] - 0.1, color='purple', linestyle='-.', 
-                          alpha=0.6, linewidth=1.5)
-            if 'k_star_combined' in summary:
-                ax.axvline(x=summary['k_star_combined'] + 0.1, color='orange', linestyle=':', 
-                          alpha=0.6, linewidth=1.5)
-            if 'k_star_top3' in summary:
-                ax.axvline(x=summary['k_star_top3'], color='cyan', linestyle='-', 
-                          alpha=0.6, linewidth=1.5)
-            ax.axvline(x=summary['k_best_val_acc'] - 0.1, color='green', linestyle=':', 
-                      alpha=0.5)
-            ax.axvline(x=summary['k_star_sep'] + 0.1, color='red', linestyle='--', 
-                      alpha=0.7, linewidth=2)
-    
-    # Update legend on first subplot to show all items
-    ax_first.legend(loc='best', fontsize=8)
-    
+    # Update legend on first subplot
+    axes[0, 0].legend(loc='best', fontsize=8)
+
+    dataset = summary.get('dataset', '')
+    model   = summary.get('model', '')
+    seed    = summary.get('seed', '')
+    fig.suptitle(
+        f"Linear Probe Analysis: {model}, {dataset}, Seed {seed}",
+        fontsize=13, fontweight='bold', y=1.01
+    )
+
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
@@ -586,78 +555,14 @@ def plot_aggregated_seeds(dataset, model, K, seeds, config):
         # Concatenate summaries
         all_summaries = pd.concat(summary_dfs, ignore_index=True)
         
-        # Check if each k* is unanimous (all seeds agree)
-        k_star_nll_values = all_summaries['k_star_nll'].unique()
-        k_star_combined_values = all_summaries['k_star_combined'].unique()
-        k_star_top3_values = all_summaries['k_star_top3'].unique()
-        k_star_sep_values = all_summaries['k_star_sep'].unique()
-        k_best_acc_values = all_summaries['k_best_val_acc'].unique()
-        
-        # Only add lines if unanimous
-        ax_first = axes[0, 0]
-        
-        if len(k_star_nll_values) == 1:
-            k_nll = int(k_star_nll_values[0])
-            ax_first.axvline(x=k_nll - 0.1, color='purple', linestyle='-.', 
-                       alpha=0.6, linewidth=1.5, label=f'k*_nll={k_nll}')
-            print(f"  k_star_nll unanimous: {k_nll}")
-        else:
-            print(f"  k_star_nll not unanimous: {k_star_nll_values.tolist()}")
-        
-        if len(k_star_combined_values) == 1:
-            k_comb = int(k_star_combined_values[0])
-            ax_first.axvline(x=k_comb + 0.1, color='orange', linestyle=':', 
-                       alpha=0.6, linewidth=1.5, label=f'k*_combined={k_comb}')
-            print(f"  k_star_combined unanimous: {k_comb}")
-        else:
-            print(f"  k_star_combined not unanimous: {k_star_combined_values.tolist()}")
-        
-        if len(k_star_top3_values) == 1:
-            k_top3 = int(k_star_top3_values[0])
-            ax_first.axvline(x=k_top3, color='cyan', linestyle='-', 
-                       alpha=0.6, linewidth=1.5, label=f'k*_top3={k_top3}')
-            print(f"  k_star_top3 unanimous: {k_top3}")
-        else:
-            print(f"  k_star_top3 not unanimous: {k_star_top3_values.tolist()}")
-        
-        if len(k_star_sep_values) == 1:
-            k_sep = int(k_star_sep_values[0])
-            ax_first.axvline(x=k_sep + 0.1, color='red', linestyle='--', 
-                       alpha=0.7, linewidth=2, label=f'k*_sep={k_sep}')
-            print(f"  k_star_sep unanimous: {k_sep}")
-        else:
-            print(f"  k_star_sep not unanimous: {k_star_sep_values.tolist()}")
-        
-        if len(k_best_acc_values) == 1:
-            k_acc = int(k_best_acc_values[0])
-            ax_first.axvline(x=k_acc - 0.1, color='green', linestyle=':', 
-                       alpha=0.5, label=f'k_best_acc={k_acc}')
-            print(f"  k_best_acc unanimous: {k_acc}")
-        else:
-            print(f"  k_best_acc not unanimous: {k_best_acc_values.tolist()}")
-        
-        # Add same lines to other subplots (without labels)
-        for ax in axes.flat:
-            if ax != ax_first:
-                if len(k_star_nll_values) == 1:
-                    ax.axvline(x=int(k_star_nll_values[0]) - 0.1, color='purple', linestyle='-.', 
-                              alpha=0.6, linewidth=1.5)
-                if len(k_star_combined_values) == 1:
-                    ax.axvline(x=int(k_star_combined_values[0]) + 0.1, color='orange', linestyle=':', 
-                              alpha=0.6, linewidth=1.5)
-                if len(k_star_top3_values) == 1:
-                    ax.axvline(x=int(k_star_top3_values[0]), color='cyan', linestyle='-', 
-                              alpha=0.6, linewidth=1.5)
-                if len(k_star_sep_values) == 1:
-                    ax.axvline(x=int(k_star_sep_values[0]) + 0.1, color='red', linestyle='--', 
-                              alpha=0.7, linewidth=2)
-                if len(k_best_acc_values) == 1:
-                    ax.axvline(x=int(k_best_acc_values[0]) - 0.1, color='green', linestyle=':', 
-                              alpha=0.5)
-        
-        # Update legend on first subplot
-        ax_first.legend(loc='best', fontsize=8)
+        # (k* depth selection lines removed)
     
+    seeds_str = ", ".join(str(s) for s in seeds)
+    fig.suptitle(
+        f"Linear Probe Analysis: {model}, {dataset} -- Mean +/- Std across Seeds ({seeds_str})",
+        fontsize=13, fontweight='bold', y=1.01
+    )
+
     plt.tight_layout()
     
     # Save to hierarchical directory
@@ -672,6 +577,183 @@ def plot_aggregated_seeds(dataset, model, K, seeds, config):
     print(f"  Aggregated across {len(seeds)} seeds")
 
 
+def plot_aggregated_seeds_per_class(dataset, model, K, seeds, config):
+    """
+    6-panel (3x2) aggregated plot across seeds including per-class breakdown.
+
+    Top 4 panels: AUROC, Cohen's d, Validation Accuracy, Mean Entropy (mean±std).
+    Bottom 2 panels: Per-Class Accuracy, Per-Class Mean Entropy (mean±std per class).
+
+    Saved as: {dataset}_{model}_k{K}_seed_all_separability_vs_k_per_class.png
+    """
+    # ---------- Load enriched (aggregate) data ----------
+    all_dfs = []
+    for seed in seeds:
+        csv_path = Path(config['tables_dir']) / f'{dataset}_{model}_K{K}_seed{seed}_probe_with_separability.csv'
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
+            df['seed'] = seed
+            all_dfs.append(df)
+        else:
+            print(f"Warning: Missing enriched data for seed {seed}, skipping")
+
+    if len(all_dfs) == 0:
+        print("No enriched data found for aggregation")
+        return
+
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    metrics = ['val_auroc_err_from_entropy', 'val_cohens_d', 'val_acc',
+               'val_entropy_auc_correct', 'val_entropy_auc_incorrect']
+    agg_df = combined_df.groupby('k')[metrics].agg(['mean', 'std']).reset_index()
+    k_values = agg_df['k'].values
+
+    # ---------- Load per-class data ----------
+    all_pc_dfs = []
+    for seed in seeds:
+        pc_path = Path(config['tables_dir']) / f'{dataset}_{model}_K{K}_seed{seed}_per_class.csv'
+        if pc_path.exists():
+            df_pc = pd.read_csv(pc_path)
+            df_pc['seed'] = seed
+            all_pc_dfs.append(df_pc)
+        else:
+            print(f"Warning: Missing per-class data for seed {seed}, skipping per-class panels")
+
+    # Detect number of classes from columns
+    if len(all_pc_dfs) > 0:
+        sample_cols = all_pc_dfs[0].columns.tolist()
+        num_classes = sum(1 for c in sample_cols if c.startswith('class_') and c.endswith('_accuracy'))
+        combined_pc = pd.concat(all_pc_dfs, ignore_index=True)
+        # Aggregate per-class accuracy and entropy
+        pc_acc_cols     = [f'class_{c}_accuracy' for c in range(num_classes)]
+        pc_ent_cols     = [f'class_{c}_entropy'  for c in range(num_classes)]
+        pc_n_total_cols = [f'class_{c}_n_total'  for c in range(num_classes)]
+        pc_agg = combined_pc.groupby('k')[pc_acc_cols + pc_ent_cols].agg(['mean', 'std']).reset_index()
+        # n_total is fixed per class — take from first seed
+        n_total_by_class = {
+            c: int(all_pc_dfs[0][f'class_{c}_n_total'].iloc[0])
+            for c in range(num_classes)
+        }
+        has_per_class = True
+    else:
+        has_per_class = False
+        num_classes = 0
+
+    # ---------- Build figure ----------
+    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
+    colors = plt.cm.tab10(np.arange(max(num_classes, 10)))
+
+    # Panel 1: AUROC
+    ax = axes[0, 0]
+    mean = agg_df[('val_auroc_err_from_entropy', 'mean')].values
+    std  = agg_df[('val_auroc_err_from_entropy', 'std')].values
+    ax.plot(k_values, mean, 'o-', label=f'Mean (n={len(seeds)} seeds)', color='tab:blue', linewidth=2)
+    ax.fill_between(k_values, mean - std, mean + std, alpha=0.2, color='tab:blue')
+    ax.axhline(0.5, color='gray', linestyle='--', alpha=0.5, label='Random')
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('AUROC', fontsize=11, fontweight='bold')
+    ax.set_title('Error Detection AUROC vs Depth', fontsize=12, fontweight='bold')
+    ax.set_ylim([0, 1])
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9)
+
+    # Panel 2: Cohen's d
+    ax = axes[0, 1]
+    mean = agg_df[('val_cohens_d', 'mean')].values
+    std  = agg_df[('val_cohens_d', 'std')].values
+    ax.plot(k_values, mean, 'o-', label=f'Mean (n={len(seeds)} seeds)', color='tab:orange', linewidth=2)
+    ax.fill_between(k_values, mean - std, mean + std, alpha=0.2, color='tab:orange')
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel("Cohen's d", fontsize=11, fontweight='bold')
+    ax.set_title("Entropy Separability (Cohen's d) vs Depth", fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9)
+
+    # Panel 3: Validation Accuracy
+    ax = axes[1, 0]
+    mean = agg_df[('val_acc', 'mean')].values
+    std  = agg_df[('val_acc', 'std')].values
+    ax.plot(k_values, mean, 'o-', label=f'Mean (n={len(seeds)} seeds)', color='tab:green', linewidth=2)
+    ax.fill_between(k_values, mean - std, mean + std, alpha=0.2, color='tab:green')
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Accuracy', fontsize=11, fontweight='bold')
+    ax.set_title('Validation Accuracy vs Depth', fontsize=12, fontweight='bold')
+    ax.set_ylim([0, 1])
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9)
+
+    # Panel 4: Mean Entropy correct vs incorrect
+    ax = axes[1, 1]
+    mc  = agg_df[('val_entropy_auc_correct',   'mean')].values
+    sc  = agg_df[('val_entropy_auc_correct',   'std')].values
+    mi  = agg_df[('val_entropy_auc_incorrect', 'mean')].values
+    si  = agg_df[('val_entropy_auc_incorrect', 'std')].values
+    ax.plot(k_values, mc, 'o-', label='Correct Predictions',   color='tab:blue', linewidth=2)
+    ax.fill_between(k_values, mc - sc, mc + sc, alpha=0.2, color='tab:blue')
+    ax.plot(k_values, mi, 's-', label='Incorrect Predictions', color='tab:red',  linewidth=2)
+    ax.fill_between(k_values, mi - si, mi + si, alpha=0.2, color='tab:red')
+    ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Mean Entropy', fontsize=11, fontweight='bold')
+    ax.set_title('Mean Entropy: Correct vs Incorrect', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9)
+
+    # Panel 5 & 6: Per-class (if data available)
+    if has_per_class:
+        # Sort classes by descending n_total for legend
+        sorted_classes = sorted(range(num_classes), key=lambda c: n_total_by_class[c])
+
+        # Panel 5: Per-class Accuracy
+        ax = axes[2, 0]
+        for c in sorted_classes:
+            m = pc_agg[(f'class_{c}_accuracy', 'mean')].values
+            s = pc_agg[(f'class_{c}_accuracy', 'std')].values
+            n = n_total_by_class[c]
+            ax.plot(k_values, m, 'o-', linewidth=1.5, markersize=5,
+                    label=f'C{c} (n={n})', color=colors[c])
+            ax.fill_between(k_values, m - s, m + s, alpha=0.12, color=colors[c])
+        ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+        ax.set_ylabel('Per-Class Accuracy', fontsize=11, fontweight='bold')
+        ax.set_title('Per-Class Validation Accuracy by Depth', fontsize=12, fontweight='bold')
+        ax.set_ylim([0, 1.05])
+        ax.grid(True, alpha=0.3)
+
+        # Panel 6: Per-class Entropy
+        ax = axes[2, 1]
+        for c in sorted_classes:
+            m = pc_agg[(f'class_{c}_entropy', 'mean')].values
+            s = pc_agg[(f'class_{c}_entropy', 'std')].values
+            n = n_total_by_class[c]
+            ax.plot(k_values, m, 'o-', linewidth=1.5, markersize=5,
+                    label=f'C{c} (n={n})', color=colors[c])
+            ax.fill_between(k_values, m - s, m + s, alpha=0.12, color=colors[c])
+        ax.set_xlabel('Depth k', fontsize=11, fontweight='bold')
+        ax.set_ylabel('Per-Class Mean Entropy', fontsize=11, fontweight='bold')
+        ax.set_title('Per-Class Mean Entropy by Depth', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=9, ncol=1, loc='best')
+    else:
+        axes[2, 0].set_visible(False)
+        axes[2, 1].set_visible(False)
+
+    # ---------- Title & save ----------
+    seeds_str = ", ".join(str(s) for s in seeds)
+    fig.suptitle(
+        f"Linear Probe Analysis: {model}, {dataset} -- Mean +/- Std across Seeds ({seeds_str})",
+        fontsize=13, fontweight='bold', y=1.01
+    )
+
+    plt.tight_layout()
+
+    plot_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = plot_dir / f'{dataset}_{model}_k{K}_seed_all_separability_vs_k_per_class.png'
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"  Per-class aggregated plot saved to: {output_path}")
+
 
 def main():
 
@@ -681,212 +763,311 @@ def main():
     parser.add_argument('--K', type=int, default=8)
     parser.add_argument('--seed', type=str, default='0',
                        help='Seed value or "all" to run all seeds from config')
+    parser.add_argument('--split', type=str, default=None,
+                       help='Split index for heterophilous datasets, or "all" to average across '
+                            'all 10 splits. Omit for homophilous datasets (Cora, PubMed).')
     parser.add_argument('--eps_acc', type=float, default=0.02,
                        help='Accuracy tolerance for constrained selection (default: 0.02)')
-    
+
     args = parser.parse_args()
-    
+
     # Convert config module to dict
     config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}
-    
-    # Handle seed argument
-    if args.seed.lower() == 'all':
-        seeds_to_run = config['seeds']
-        run_all_seeds = True
-        print(f"\n{'='*60}")
-        print(f"Separability Metrics: {args.model} on {args.dataset}")
-        print(f"K={args.K}, running all seeds: {seeds_to_run}, eps_acc={args.eps_acc}")
-        print(f"{'='*60}")
+
+    # ---------- Parse --split ----------
+    # splits_to_run: list of ints, or [None] for homophilous (no suffix)
+    if args.split is None:
+        splits_to_run = [None]
+        split_label   = ''              # no suffix in file names
+    elif args.split.lower() == 'all':
+        splits_to_run = list(range(10))
+        split_label   = '_all_splits'
     else:
-        seeds_to_run = [int(args.seed)]
+        splits_to_run = [int(args.split)]
+        split_label   = f'_split{args.split}'
+
+    # ---------- Parse --seed ----------
+    if args.seed.lower() == 'all':
+        seeds_to_run  = config['seeds']
+        run_all_seeds = True
+    else:
+        seeds_to_run  = [int(args.seed)]
         run_all_seeds = False
+
+    seed_label = '_all_seeds' if run_all_seeds else f'_seed{seeds_to_run[0]}'
+
+    print(f"\n{'='*60}")
+    print(f"Separability Metrics: {args.model} on {args.dataset}")
+    print(f"K={args.K}, seeds={seeds_to_run}, splits={splits_to_run}, eps_acc={args.eps_acc}")
+    print(f"{'='*60}")
+
+    # ---------- Load dataset once (for labels/masks) ----------
+    from src.datasets import load_dataset as load_ds
+    data_obj, num_classes, _ = load_ds(
+        args.dataset,
+        root_dir='data',
+        planetoid_normalize=False,
+        planetoid_split='public'
+    )
+    labels    = data_obj.y.numpy()
+    # val_mask may be 1-D (homophilous) or 2-D (N×10, heterophilous)
+    val_mask_raw  = data_obj.val_mask
+    test_mask_raw = data_obj.test_mask
+
+    # ---------- Helper: get (probe_csv, arrays_npz, val_mask, test_mask) for a (seed, split) ----------
+    def _get_paths_and_masks(seed, split):
+        sfx = '' if split is None else f'_split{split}'
+        probe_path  = Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}_seed{seed}{sfx}_probe.csv'
+        arrays_path = Path(config['results_dir']) / 'arrays' / f'{args.dataset}_{args.model}_K{args.K}_seed{seed}{sfx}_pernode.npz'
+        # Select correct mask slice
+        if val_mask_raw.dim() == 2:
+            s = split if split is not None else 0
+            vm = val_mask_raw[:, s].numpy()
+            tm = test_mask_raw[:, s].numpy()
+        else:
+            vm = val_mask_raw.numpy()
+            tm = test_mask_raw.numpy()
+        return probe_path, arrays_path, vm, tm
+
+    # ---------- Collect all (seed, split) combinations ----------
+    combinations = [(s, sp) for s in seeds_to_run for sp in splits_to_run]
+    print(f"Total (seed, split) combinations: {len(combinations)}")
+
+    # Aggregation tag for file names
+    agg_tag = seed_label + split_label   # e.g. '_seed0_all_splits' or '_all_seeds_split0'
+
+    # We will collect enriched DataFrames and per-class DataFrames for the aggregated plot
+    all_enriched_dfs  = []
+    all_per_class_dfs = []
+
+    for seed, split in combinations:
+        sfx = '' if split is None else f'_split{split}'
+        combo_label = f"seed {seed}" + ('' if split is None else f", split {split}")
         print(f"\n{'='*60}")
-        print(f"Separability Metrics: {args.model} on {args.dataset}")
-        print(f"K={args.K}, seed={args.seed}, eps_acc={args.eps_acc}")
+        print(f"Processing {combo_label}")
         print(f"{'='*60}")
-    
-    
-    # Process each seed
-    for seed in seeds_to_run:
-        print(f"\n{'='*60}")
-        print(f"Processing seed {seed}")
-        print(f"{'='*60}")
-        
-        # Load existing probe results
-        probe_csv_path = Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}_seed{seed}_probe.csv'
-        
+
+        probe_csv_path, arrays_path, val_mask, test_mask = _get_paths_and_masks(seed, split)
+
         if not probe_csv_path.exists():
-            print(f"Warning: Probe results not found for seed {seed}: {probe_csv_path}")
-            print(f"Skipping seed {seed}")
+            print(f"Warning: Probe CSV not found: {probe_csv_path} -- skipping")
             continue
-        
-        df = pd.read_csv(probe_csv_path)
-        print(f"\nLoaded probe results from: {probe_csv_path}")
-        
-        # Load per-node arrays
-        arrays_path = Path(config['results_dir']) / 'arrays' / f'{args.dataset}_{args.model}_K{args.K}_seed{seed}_pernode.npz'
-        
         if not arrays_path.exists():
-            print(f"Warning: Per-node arrays not found for seed {seed}")
-            print(f"Skipping seed {seed}")
+            print(f"Warning: Arrays npz not found: {arrays_path} -- skipping")
             continue
-        
+
+        df   = pd.read_csv(probe_csv_path)
         data = np.load(arrays_path)
-        print(f"Loaded per-node arrays from: {arrays_path}")
-        
-        # Load dataset to get labels and num_classes
-        from src.datasets import load_dataset as load_ds
-        data_obj, num_classes, _ = load_ds(
-            args.dataset,
-            root_dir='data',
-            planetoid_normalize=False,
-            planetoid_split='public'
-        )
-        
-        labels = data_obj.y.numpy()
-        val_mask = data_obj.val_mask.numpy()
-        test_mask = data_obj.test_mask.numpy()
-        
-        labels_val = labels[val_mask]
-        labels_test = labels[test_mask]
-        
+        print(f"Loaded: {probe_csv_path.name}")
+
+        labels_val  = labels[val_mask]
         K = args.K
-        
-        # Compute separability metrics for each depth
-        print(f"\nComputing separability metrics for k=0..{K}...")
-        
+
+        # ---------- Compute metrics for each depth ----------
         separability_metrics = []
-        per_class_metrics = []
-        
+        per_class_metrics    = []
+
         for k in range(K + 1):
-            H_val = data[f'H_val_{k}']
-            e_val = data[f'e_val_{k}']
+            H_val  = data[f'H_val_{k}']
+            e_val  = data[f'e_val_{k}']
             H_test = data[f'H_test_{k}']
             e_test = data[f'e_test_{k}']
-            
-            # Load probabilities for per-class metrics
-            p_val = data[f'p_val_{k}']
-            
-            metrics = compute_separability_metrics_at_depth(H_val, e_val, H_test, e_test)
+            p_val  = data[f'p_val_{k}']
+
+            metrics      = compute_separability_metrics_at_depth(H_val, e_val, H_test, e_test)
             metrics['k'] = k
             separability_metrics.append(metrics)
-            
-            # Compute per-class metrics
+
             per_class_data = {'k': k}
-            preds_val = np.argmax(p_val, axis=1)
-            
+            preds_val      = np.argmax(p_val, axis=1)
+
             for c in range(num_classes):
-                class_mask = (labels_val == c)
+                class_mask    = (labels_val == c)
                 n_class_total = class_mask.sum()
-                
                 if n_class_total > 0:
-                    class_preds = preds_val[class_mask]
+                    class_preds   = preds_val[class_mask]
                     class_correct = (class_preds == c).astype(int)
                     class_entropy = H_val[class_mask]
-                    
-                    n_class_correct = class_correct.sum()
-                    n_class_wrong = n_class_total - n_class_correct
-                    
-                    # Per-class accuracy
-                    class_accuracy = class_correct.mean()
-                    
-                    # Per-class mean entropy
-                    class_mean_entropy = class_entropy.mean()
-                    
-                    per_class_data[f'class_{c}_accuracy'] = class_accuracy
-                    per_class_data[f'class_{c}_entropy'] = class_mean_entropy
-                    per_class_data[f'class_{c}_n_total'] = n_class_total
-                    per_class_data[f'class_{c}_n_correct'] = n_class_correct
-                    per_class_data[f'class_{c}_n_wrong'] = n_class_wrong
+                    n_correct     = class_correct.sum()
+                    per_class_data[f'class_{c}_accuracy'] = class_correct.mean()
+                    per_class_data[f'class_{c}_entropy']  = class_entropy.mean()
+                    per_class_data[f'class_{c}_n_total']  = n_class_total
+                    per_class_data[f'class_{c}_n_correct']= n_correct
+                    per_class_data[f'class_{c}_n_wrong']  = n_class_total - n_correct
                 else:
-                    per_class_data[f'class_{c}_accuracy'] = np.nan
-                    per_class_data[f'class_{c}_entropy'] = np.nan
-                    per_class_data[f'class_{c}_n_total'] = 0
-                    per_class_data[f'class_{c}_n_correct'] = 0
-                    per_class_data[f'class_{c}_n_wrong'] = 0
-            
+                    for col in ['accuracy', 'entropy']:
+                        per_class_data[f'class_{c}_{col}'] = np.nan
+                    for col in ['n_total', 'n_correct', 'n_wrong']:
+                        per_class_data[f'class_{c}_{col}'] = 0
             per_class_metrics.append(per_class_data)
-        
-        # Merge with original probe results
-        sep_df = pd.DataFrame(separability_metrics)
+
+        sep_df     = pd.DataFrame(separability_metrics)
         df_enriched = df.merge(sep_df, on='k')
-        
-        # Perform constrained selection
+        df_enriched['seed']  = seed
+        df_enriched['split'] = split if split is not None else -1
+        all_enriched_dfs.append(df_enriched)
+
+        df_per_class = pd.DataFrame(per_class_metrics)
+        df_per_class['seed']  = seed
+        df_per_class['split'] = split if split is not None else -1
+        all_per_class_dfs.append(df_per_class)
+
+        # ---------- Constrained selection & correlations ----------
         print(f"\nPerforming constrained depth selection (eps_acc={args.eps_acc})...")
         k_star_sep, k_star_method, k_best_val_acc = select_k_star_constrained(df_enriched, args.eps_acc)
-        
-        # Compute Spearman correlations
-        print(f"\nComputing Spearman correlations...")
         correlations = compute_spearman_correlations(df_enriched)
-        
-        for key, val in correlations.items():
+        for key, val_v in correlations.items():
             if 'rho' in key:
-                print(f"  {key}: {val:.4f}")
-        
-        # Compute baseline selection methods for comparison
-        print(f"\nComputing baseline selection methods for comparison...")
-        k_star_nll = select_k_star_nll(df_enriched)
+                print(f"  {key}: {val_v:.4f}")
+        k_star_nll      = select_k_star_nll(df_enriched)
         k_star_combined = select_k_star_combined(df_enriched, lambda_val=0.1)
-        k_star_top3 = select_k_star_top3(df_enriched)
-        
-        print(f"  k_star_nll (argmin val_nll) = {k_star_nll}")
-        print(f"  k_star_combined (argmin val_nll + 0.1*entropy) = {k_star_combined}")
-        print(f"  k_star_top3 (top-3 acc, max AUROC) = {k_star_top3}")
-        print(f"  k_star_sep (constrained AUROC) = {k_star_sep}")
-        
-        # Save enriched CSV
-        output_csv = Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}_seed{seed}_probe_with_separability.csv'
+        k_star_top3     = select_k_star_top3(df_enriched)
+        print(f"  k_star_nll={k_star_nll}  k_star_combined={k_star_combined}  "
+              f"k_star_top3={k_star_top3}  k_star_sep={k_star_sep}")
+
+        # ---------- Save per-seed/split outputs ----------
+        out_sfx = f'_seed{seed}{sfx}'
+        output_csv   = Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}{out_sfx}_probe_with_separability.csv'
+        summary_csv  = Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}{out_sfx}_separability_summary.csv'
+        per_class_csv= Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}{out_sfx}_per_class.csv'
+
         df_enriched.to_csv(output_csv, index=False)
-        print(f"\n[DONE] Enriched results saved to: {output_csv}")
-        
-        # Save summary CSV
+        df_per_class.to_csv(per_class_csv, index=False)
+
         summary = {
-            'dataset': args.dataset,
-            'model': args.model,
-            'K': args.K,
-            'seed': seed,
+            'dataset': args.dataset, 'model': args.model, 'K': args.K,
+            'seed': seed, 'split': split,
             'k_best_val_acc': k_best_val_acc,
-            'k_star_nll': k_star_nll,
-            'k_star_combined': k_star_combined,
-            'k_star_top3': k_star_top3,
-            'k_star_sep': k_star_sep,
-            'k_star_method': k_star_method,
-            'eps_acc': args.eps_acc,
+            'k_star_nll': k_star_nll, 'k_star_combined': k_star_combined,
+            'k_star_top3': k_star_top3, 'k_star_sep': k_star_sep,
+            'k_star_method': k_star_method, 'eps_acc': args.eps_acc,
         }
         summary.update(correlations)
-        
-        summary_df = pd.DataFrame([summary])
-        summary_csv = Path(config['tables_dir']) / f'{args.dataset}_{args.model}_K{args.K}_seed{seed}_separability_summary.csv'
-        summary_df.to_csv(summary_csv, index=False)
-        print(f"[DONE] Summary saved to: {summary_csv}")
-        
-        # Generate individual seed plot
-        print(f"\nGenerating plots...")
-        
-        # Create hierarchical directory structure
+        pd.DataFrame([summary]).to_csv(summary_csv, index=False)
+        print(f"[DONE] Outputs saved with suffix '{out_sfx}'")
+
+        # Individual plot only when there's a single (seed, split) or we're iterating single-seed
+        if len(combinations) == 1 or (run_all_seeds and len(splits_to_run) == 1):
+            plot_dir = Path(config['figures_dir']) / args.dataset / args.model / f'K_{args.K}'
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            plot_path = plot_dir / f'{args.dataset}_{args.model}_k{args.K}{out_sfx}_separability_vs_k.png'
+            summary['seed'] = seed   # ensure suptitle uses correct seed
+            plot_separability_vs_depth(df_enriched, df_per_class, num_classes, summary, plot_path)
+            print(f"  Individual plot saved: {plot_path.name}")
+
+        print(f"\n{'='*60}")
+        print(f"[DONE] {combo_label}: k_best_val_acc={k_best_val_acc}  k_star_sep={k_star_sep}")
+        print(f"{'='*60}\n")
+
+    # ---------- Aggregated plot across all collected combinations ----------
+    if len(all_enriched_dfs) > 1:
+        print(f"\n{'='*60}")
+        print(f"Generating aggregated plots ({len(all_enriched_dfs)} combinations: {agg_tag})")
+        print(f"{'='*60}")
+
+        # Build a temporary config pointing to the combined CSVs that the aggregated
+        # plot functions can find by their standard naming convention.
+        # Simpler: pass DataFrames directly via a local helper.
+
+        combined_enriched  = pd.concat(all_enriched_dfs,  ignore_index=True)
+        combined_per_class = pd.concat(all_per_class_dfs, ignore_index=True)
+
+        metrics_cols = ['val_auroc_err_from_entropy', 'val_cohens_d', 'val_acc',
+                        'val_entropy_auc_correct', 'val_entropy_auc_incorrect']
+        agg_df   = combined_enriched.groupby('k')[metrics_cols].agg(['mean', 'std']).reset_index()
+        k_values = agg_df['k'].values
+
+        pc_acc_cols = [c for c in combined_per_class.columns if c.endswith('_accuracy') and c.startswith('class_')]
+        pc_ent_cols = [c for c in combined_per_class.columns if c.endswith('_entropy')  and c.startswith('class_')]
+        pc_agg = combined_per_class.groupby('k')[pc_acc_cols + pc_ent_cols].agg(['mean', 'std']).reset_index()
+        n_total_by_class = {
+            int(c.split('_')[1]): int(all_per_class_dfs[0][c.replace('_accuracy','_n_total')].iloc[0])
+            for c in pc_acc_cols
+        }
+        sorted_classes = sorted(n_total_by_class.keys(), key=lambda c: n_total_by_class[c])
+
+        fig, axes = plt.subplots(3, 2, figsize=(14, 15))
+        colors = plt.cm.tab10(np.arange(max(num_classes, 10)))
+
+        def _plot_mean_std(ax, kv, m, s, color, label, marker='o'):
+            ax.plot(kv, m, f'{marker}-', label=label, color=color, linewidth=2)
+            ax.fill_between(kv, m - s, m + s, alpha=0.2, color=color)
+
+        n_combos = len(all_enriched_dfs)
+        lbl = f'Mean (n={n_combos})'
+
+        ax = axes[0, 0]
+        _plot_mean_std(ax, k_values, agg_df[('val_auroc_err_from_entropy','mean')].values,
+                       agg_df[('val_auroc_err_from_entropy','std')].values, 'tab:blue', lbl)
+        ax.axhline(0.5, color='gray', linestyle='--', alpha=0.5, label='Random')
+        ax.set(xlabel='Depth k', ylabel='AUROC', title='Error Detection AUROC vs Depth', ylim=[0,1])
+        ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+        ax = axes[0, 1]
+        _plot_mean_std(ax, k_values, agg_df[('val_cohens_d','mean')].values,
+                       agg_df[('val_cohens_d','std')].values, 'tab:orange', lbl)
+        ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+        ax.set(xlabel='Depth k', ylabel="Cohen's d", title="Entropy Separability (Cohen's d) vs Depth")
+        ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+        ax = axes[1, 0]
+        _plot_mean_std(ax, k_values, agg_df[('val_acc','mean')].values,
+                       agg_df[('val_acc','std')].values, 'tab:green', lbl)
+        ax.set(xlabel='Depth k', ylabel='Accuracy', title='Validation Accuracy vs Depth', ylim=[0,1])
+        ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+        ax = axes[1, 1]
+        _plot_mean_std(ax, k_values, agg_df[('val_entropy_auc_correct','mean')].values,
+                       agg_df[('val_entropy_auc_correct','std')].values, 'tab:blue', 'Correct', 'o')
+        _plot_mean_std(ax, k_values, agg_df[('val_entropy_auc_incorrect','mean')].values,
+                       agg_df[('val_entropy_auc_incorrect','std')].values, 'tab:red', 'Incorrect', 's')
+        ax.set(xlabel='Depth k', ylabel='Mean Entropy', title='Mean Entropy: Correct vs Incorrect')
+        ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
+
+        ax = axes[2, 0]
+        for c in sorted_classes:
+            col = f'class_{c}_accuracy'
+            m = pc_agg[(col,'mean')].values; s = pc_agg[(col,'std')].values
+            ax.plot(k_values, m, 'o-', linewidth=1.5, markersize=5,
+                    label=f'C{c} (n={n_total_by_class[c]})', color=colors[c])
+            ax.fill_between(k_values, m-s, m+s, alpha=0.12, color=colors[c])
+        ax.set(xlabel='Depth k', ylabel='Per-Class Accuracy',
+               title='Per-Class Validation Accuracy by Depth', ylim=[0,1.05])
+        ax.grid(True, alpha=0.3)
+
+        ax = axes[2, 1]
+        for c in sorted_classes:
+            col = f'class_{c}_entropy'
+            m = pc_agg[(col,'mean')].values; s = pc_agg[(col,'std')].values
+            ax.plot(k_values, m, 'o-', linewidth=1.5, markersize=5,
+                    label=f'C{c} (n={n_total_by_class[c]})', color=colors[c])
+            ax.fill_between(k_values, m-s, m+s, alpha=0.12, color=colors[c])
+        ax.set(xlabel='Depth k', ylabel='Per-Class Mean Entropy',
+               title='Per-Class Mean Entropy by Depth')
+        ax.grid(True, alpha=0.3); ax.legend(fontsize=9, ncol=1, loc='best')
+
+        # Title reflecting what was averaged
+        if run_all_seeds and len(splits_to_run) > 1:
+            avg_desc = f"Mean +/- Std across Seeds {seeds_to_run} x Splits 0..{len(splits_to_run)-1}"
+        elif run_all_seeds:
+            sp_str = '' if splits_to_run[0] is None else f', Split {splits_to_run[0]}'
+            avg_desc = f"Mean +/- Std across Seeds {seeds_to_run}{sp_str}"
+        else:
+            avg_desc = f"Mean +/- Std across Splits 0..{len(splits_to_run)-1}, Seed {seeds_to_run[0]}"
+
+        fig.suptitle(f"Linear Probe Analysis: {args.model}, {args.dataset} -- {avg_desc}",
+                     fontsize=13, fontweight='bold', y=1.01)
+        plt.tight_layout()
+
         plot_dir = Path(config['figures_dir']) / args.dataset / args.model / f'K_{args.K}'
         plot_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Convert per-class metrics to DataFrame
-        df_per_class = pd.DataFrame(per_class_metrics)
-        
-        plot_path = plot_dir / f'{args.dataset}_{args.model}_k{args.K}_seed{seed}_separability_vs_k.png'
-        plot_separability_vs_depth(df_enriched, df_per_class, num_classes, summary, plot_path)
-        
+        out_plot = plot_dir / f'{args.dataset}_{args.model}_k{args.K}{agg_tag}_separability_vs_k_per_class.png'
+        plt.savefig(out_plot, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"  Aggregated per-class plot saved: {out_plot.name}")
+
         print(f"\n{'='*60}")
-        print(f"[DONE] Separability analysis complete for seed {seed}!")
-        print(f"  k_best_val_acc = {k_best_val_acc}")
-        print(f"  k_star_sep = {k_star_sep} (method: {k_star_method})")
-        print(f"{'='*60}\n")
-    
-    # If running all seeds, generate aggregated plot
-    if run_all_seeds and len(seeds_to_run) > 1:
-        print(f"\n{'='*60}")
-        print(f"Generating aggregated plot across all seeds")
-        print(f"{'='*60}")
-        plot_aggregated_seeds(args.dataset, args.model, args.K, seeds_to_run, config)
-        print(f"\n{'='*60}")
-        print(f"[DONE] All seeds complete with aggregated plot!")
+        print(f"[DONE] Aggregated plot complete!")
         print(f"{'='*60}\n")
 
 

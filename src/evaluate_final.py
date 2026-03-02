@@ -11,9 +11,14 @@ Usage:
     python src/evaluate_final.py --dataset Cora --model GCN --K 3 --seed 0 \\
         --loss-type weighted_ce_plus_R
 
-    # Batch evaluation from best_hyperparams.csv
+    # Batch evaluation from best_hyperparams.csv (per-group: same hyperparams for all K)
     python src/evaluate_final.py --from-best-hyperparams
     python src/evaluate_final.py --from-best-hyperparams --seeds all --K-values all
+
+    # Batch evaluation from best_hyperparams_per_layer.csv (per-layer: K-specific hyperparams)
+    python src/evaluate_final.py --from-best-hyperparams \\
+        --best-hyperparams-path results/best_hyperparams_GCN_per_layer.csv \\
+        --split-mode all --output-path results/comparison_tables/final_results_GCN_per_layer.csv
 """
 
 import argparse
@@ -120,8 +125,7 @@ def build_loss_dir(loss_type: str, config: dict) -> str:
             parts.append("perclass")
         band_lower = config.get('band_lower', -1.0)
         band_upper = config.get('band_upper', 0.0)
-        if band_lower != -1.0 or band_upper != 0.0:
-            parts.append(f"band{band_lower:.1f}to{band_upper:.1f}")
+        parts.append(f"band{band_lower:g}to{band_upper:g}")
         return f"{loss_type}_{'_'.join(parts)}"
     return loss_type
 
@@ -229,13 +233,48 @@ def evaluate_single(
 
     print(
         f"  {dataset}/{model_name}/K={K}/seed={seed}/split={split_id} "
-        f"[{loss_type}] → test_acc={test_acc:.4f}"
+        f"[{loss_type}] -> test_acc={test_acc:.4f}"
     )
     return result
 
 
+def _apply_hp_row_to_config(hp_row, base_config):
+    """Override base_config with hyperparameter values from a CSV row."""
+    run_config = dict(base_config)
+    for col in ["lr", "weight_decay", "patience", "max_epochs", "hidden_dim",
+                "beta", "lambda_r", "entropy_floor", "per_class_r",
+                "band_lower", "band_upper"]:
+        val = hp_row.get(col)
+        if pd.notna(val):
+            cfg_key = "lambda_R" if col == "lambda_r" else \
+                      "per_class_R" if col == "per_class_r" else col
+            run_config[cfg_key] = val
+    return run_config
+
+
+def _get_split_ids(dataset, args):
+    """Return list of split IDs to evaluate for a dataset."""
+    if dataset in cfg.heterophilous_datasets:
+        if args.split_mode == "first":
+            return [0]
+        else:
+            data, _, _ = load_dataset(dataset, root_dir=args.root_dir,
+                                      planetoid_normalize=args.normalize_planetoid,
+                                      planetoid_split=args.planetoid_split)
+            n_splits = data.train_mask.size(1) if data.train_mask.dim() > 1 else 1
+            return list(range(n_splits))
+    return [None]  # homophilous: no split dimension
+
+
 def run_from_best_hyperparams(args):
-    """Batch evaluation using best_hyperparams.csv."""
+    """Batch evaluation using best_hyperparams.csv.
+
+    Supports two CSV formats:
+      - Per-group (no K column): one row per (dataset, model, loss_type).
+        The same hyperparameters are used for all K values.
+      - Per-layer (K column present): one row per (dataset, model, loss_type, K).
+        Each K gets its own optimal hyperparameters.
+    """
     if hasattr(args, 'best_hyperparams_path') and args.best_hyperparams_path:
         best_hp_path = Path(args.best_hyperparams_path)
     else:
@@ -249,59 +288,33 @@ def run_from_best_hyperparams(args):
     best_df = pd.read_csv(best_hp_path)
     print(f"Loaded {len(best_df)} best hyperparam configs from {best_hp_path}")
 
-    # Expand seeds and K values
+    per_layer_mode = "K" in best_df.columns
+    print(f"Mode: {'per-layer (K-specific hyperparams)' if per_layer_mode else 'per-group (same hyperparams for all K)'}")
+
+    # Expand seeds
     if args.seeds == ["all"]:
         seeds = cfg.seeds
     else:
         seeds = [int(s) for s in args.seeds]
 
-    if args.K_values == ["all"]:
-        K_values = list(range(1, cfg.K_max + 1))
-    else:
-        K_values = [int(k) for k in args.K_values]
-
     device = get_device()
     config = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
-
     all_results = []
 
-    for _, hp_row in best_df.iterrows():
-        dataset    = hp_row["dataset"]
-        model_name = hp_row["model"]
-        loss_type  = hp_row["loss_type"]
+    if per_layer_mode:
+        # -- Per-layer mode: one row per (dataset, model, loss_type, K) ----------
+        # Iterate rows directly — each row already specifies the K to evaluate.
+        for _, hp_row in best_df.iterrows():
+            dataset    = hp_row["dataset"]
+            model_name = hp_row["model"]
+            loss_type  = hp_row["loss_type"]
+            K          = int(hp_row["K"])
 
-        # Apply dataset-type defaults then best hyperparams
-        if dataset in cfg.homophilous_datasets:
-            run_config = {**config, **cfg.defaults_homophilous}
-        else:
-            run_config = {**config, **cfg.defaults_heterophilous}
+            base = {**config, **(cfg.defaults_homophilous if dataset in cfg.homophilous_datasets
+                                  else cfg.defaults_heterophilous)}
+            run_config = _apply_hp_row_to_config(hp_row, base)
+            split_ids  = _get_split_ids(dataset, args)
 
-        # Override with best hyperparams
-        for col in ["lr", "weight_decay", "patience", "max_epochs", "hidden_dim",
-                    "beta", "lambda_r", "entropy_floor", "per_class_r",
-                    "band_lower", "band_upper"]:
-            val = hp_row.get(col)
-            if pd.notna(val):
-                # Map lambda_r → lambda_R for config key
-                cfg_key = "lambda_R" if col == "lambda_r" else \
-                          "per_class_R" if col == "per_class_r" else col
-                run_config[cfg_key] = val
-
-        # Determine splits to evaluate
-        if dataset in cfg.heterophilous_datasets:
-            if args.split_mode == "first":
-                split_ids = [0]
-            else:
-                # Load dataset to find number of splits
-                data, _, _ = load_dataset(dataset, root_dir=args.root_dir,
-                                          planetoid_normalize=args.normalize_planetoid,
-                                          planetoid_split=args.planetoid_split)
-                n_splits = data.train_mask.size(1) if data.train_mask.dim() > 1 else 1
-                split_ids = list(range(n_splits))
-        else:
-            split_ids = [None]  # homophilous: no split dimension
-
-        for K in K_values:
             for seed in seeds:
                 for split_id in split_ids:
                     result = evaluate_single(
@@ -311,6 +324,35 @@ def run_from_best_hyperparams(args):
                     if result is not None:
                         all_results.append(result)
                         append_final_result(result)
+
+    else:
+        # -- Per-group mode: one row per (dataset, model, loss_type) --------------
+        # Expand K values from CLI args.
+        if args.K_values == ["all"]:
+            K_values = list(range(1, cfg.K_max + 1))
+        else:
+            K_values = [int(k) for k in args.K_values]
+
+        for _, hp_row in best_df.iterrows():
+            dataset    = hp_row["dataset"]
+            model_name = hp_row["model"]
+            loss_type  = hp_row["loss_type"]
+
+            base = {**config, **(cfg.defaults_homophilous if dataset in cfg.homophilous_datasets
+                                  else cfg.defaults_heterophilous)}
+            run_config = _apply_hp_row_to_config(hp_row, base)
+            split_ids  = _get_split_ids(dataset, args)
+
+            for K in K_values:
+                for seed in seeds:
+                    for split_id in split_ids:
+                        result = evaluate_single(
+                            dataset, model_name, K, seed, split_id, loss_type,
+                            run_config, args, device
+                        )
+                        if result is not None:
+                            all_results.append(result)
+                            append_final_result(result)
 
     print(f"\nEvaluation complete. {len(all_results)} runs saved to {FINAL_RESULTS_PATH}")
     return all_results
@@ -347,7 +389,9 @@ def main():
     parser.add_argument("--split-id", type=int, default=None)
     parser.add_argument("--loss-type", type=str, default=None)
     parser.add_argument("--use-classifier-head", action="store_true")
-    parser.add_argument("--checkpoint-dir", type=str, default=None)
+    parser.add_argument("--classifier-heads-dir", type=str, default=None,
+                        help="Override cfg.classifier_heads_dir (e.g. D:/GCN_eval/classifier_heads). "
+                             "Only overrides the checkpoint lookup path, not the output CSV.")
 
     # Dataset options
     parser.add_argument("--root-dir", type=str, default="data")
@@ -371,6 +415,10 @@ def main():
     # Override output path if explicitly given
     if args.output_path:
         FINAL_RESULTS_PATH = Path(args.output_path)
+
+    # Override classifier_heads_dir if explicitly given
+    if args.classifier_heads_dir:
+        cfg.classifier_heads_dir = args.classifier_heads_dir
 
     if args.from_best_hyperparams:
         run_from_best_hyperparams(args)
