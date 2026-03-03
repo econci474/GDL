@@ -22,6 +22,7 @@ Usage:
 
 import argparse
 import itertools
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -143,7 +144,10 @@ def run_training(cmd: list[str], dry_run: bool = False) -> int:
     if dry_run:
         print("    [DRY RUN — skipped]", flush=True)
         return 0
-    result = subprocess.run(cmd, cwd=str(ROOT))
+    # PYTHONUNBUFFERED=1 ensures the child process stdout appears immediately
+    # in Colab's cell output rather than being buffered until completion.
+    env = {**os.environ, 'PYTHONUNBUFFERED': '1'}
+    result = subprocess.run(cmd, cwd=str(ROOT), env=env)
     if result.returncode != 0:
         print(f"    [WARNING] Command exited with code {result.returncode}", flush=True)
     return result.returncode

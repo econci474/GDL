@@ -6,6 +6,7 @@ Falls back to a simple append if filelock is not installed.
 """
 
 import csv
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +44,8 @@ def append_result(row: dict) -> None:
             if write_header:
                 writer.writeheader()
             writer.writerow(full_row)
+            f.flush()
+            os.fsync(f.fileno())  # force Drive to see the update immediately
 
     try:
         from filelock import FileLock
