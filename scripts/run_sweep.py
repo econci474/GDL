@@ -196,9 +196,44 @@ def main():
     print(f"{'='*60}\n", flush=True)
 
     # Load completed runs for resume support
-    sweep_csv = ROOT / 'results' / 'sweep_results.csv'
+    sweep_csv    = ROOT / 'results' / 'sweep_results.csv'
+    failed_csv   = ROOT / 'results' / 'sweep_failed.csv'
     completed_runs = load_completed_runs(sweep_csv) if args.skip_existing else set()
     skipped = 0
+
+    # Prepare failed-run log
+    import csv as _csv
+    _FAIL_COLS = ['timestamp', 'dataset', 'model', 'loss_type', 'K', 'seed',
+                  'hidden_dim', 'lr', 'weight_decay', 'exit_code', 'cmd']
+    _fail_write_header = not failed_csv.exists()
+
+    def log_failed_run(cmd, rc):
+        """Append one failed-run row to sweep_failed.csv immediately."""
+        vals = {t: cmd[i+1] for i, t in enumerate(cmd[:-1])
+                if t in ('--dataset','--model','--loss-type','--K','--seed',
+                          '--hidden-dim','--lr','--weight-decay')}
+        row = {
+            'timestamp':    datetime.datetime.now().isoformat(),
+            'dataset':      vals.get('--dataset', ''),
+            'model':        vals.get('--model', ''),
+            'loss_type':    vals.get('--loss-type', ''),
+            'K':            vals.get('--K', ''),
+            'seed':         vals.get('--seed', ''),
+            'hidden_dim':   vals.get('--hidden-dim', ''),
+            'lr':           vals.get('--lr', ''),
+            'weight_decay': vals.get('--weight-decay', ''),
+            'exit_code':    rc,
+            'cmd':          ' '.join(cmd),
+        }
+        nonlocal _fail_write_header
+        with open(failed_csv, 'a', newline='') as f:
+            w = _csv.DictWriter(f, fieldnames=_FAIL_COLS)
+            if _fail_write_header:
+                w.writeheader()
+                _fail_write_header = False
+            w.writerow(row)
+            f.flush()
+            os.fsync(f.fileno())
 
     total_runs = 0
     run_idx    = 0
@@ -276,6 +311,7 @@ def main():
                             total_runs += 1
                             if rc != 0:
                                 failed_runs.append(cmd)
+                                log_failed_run(cmd, rc)
 
     print(f"\n{'='*60}", flush=True)
     print(f"Sweep complete. Total runs: {total_runs}, Skipped (already done): {skipped}", flush=True)
