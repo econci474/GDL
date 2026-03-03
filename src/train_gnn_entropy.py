@@ -246,6 +246,13 @@ def train_epoch_multi_layer(
     else:
         total_loss = torch.stack(layer_losses).sum()
 
+    # Guard: if total_loss has no grad_fn (e.g. R_only with K=1 where there
+    # are no interior layers and all R_k are bare zero tensors), anchor it to
+    # the computation graph so backward() doesn't crash.  The zero coefficient
+    # means no actual gradient flows, which is correct — nothing to regularize.
+    if total_loss.grad_fn is None:
+        total_loss = total_loss + 0.0 * layer_logits[-1].sum()
+
     total_loss.backward()
     optimizer.step()
 
