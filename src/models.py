@@ -250,7 +250,9 @@ class GATNet(nn.Module):
         layer_logits = []
         layer_probs = []
         # k=0..K-1: apply per-layer linear classifiers
-        for k, emb in enumerate(embeddings):
+        # embeddings[:-1] excludes the final layer output (embeddings[K] = final_logits)
+        # which is already num_classes and handled separately below.
+        for k, emb in enumerate(embeddings[:-1]):
             logits_k = self.layer_classifiers[k](emb)
             probs_k = F.softmax(logits_k, dim=-1)
             layer_logits.append(logits_k)
