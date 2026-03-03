@@ -1,7 +1,7 @@
 """Configuration for GNN entropy experiments."""
 
 # ── Experiments ────────────────────────────────────────────────────
-seeds = [0, 1, 2, 3]
+seeds = [0, 1, 2]
 models = ['GCN', 'GAT', 'GraphSAGE']
 
 # Dataset classification
@@ -20,11 +20,11 @@ gat_heads = 8
 # Probing
 probe_C_values = [0.01, 0.1, 1, 10, 100]
 
-# ── Defaults (used when not sweeping) ──────────────────────────────
+# ── Defaults (for standard GNN without classifier heads i.e. linear probing) ──────────────────────────────
 # Homophilous datasets (Cora, PubMed)
 defaults_homophilous = {
-    'hidden_dim':   64,
-    'lr':           0.01,
+    'hidden_dim':   16,
+    'lr':           0.001,
     'weight_decay': 5e-4,
     'max_epochs':   500,
     'patience':     50,
@@ -33,14 +33,14 @@ defaults_homophilous = {
 # Heterophilous datasets (Roman-empire, Minesweeper, Squirrel)
 defaults_heterophilous = {
     'hidden_dim':   256,
-    'lr':           0.05,
+    'lr':           0.005,
     'weight_decay': 5e-4,
     'max_epochs':   1000,
     'patience':     100,
 }
 
 # ── Hyperparameter sweep grids ─────────────────────────────────────
-# Standard GNN (train_gnn.py) — homophilous
+# GNN with classifier heads — homophilous
 sweep_homophilous = {
     'hidden_dim':   [16, 64],
     'lr':           [0.01, 0.005],
@@ -49,9 +49,9 @@ sweep_homophilous = {
     'patience':     [50],
 }
 
-# Standard GNN (train_gnn.py) — heterophilous
+# GNN with classifier heads — heterophilous
 sweep_heterophilous = {
-    'hidden_dim':   [256, 512],
+    'hidden_dim':   [64, 256],
     'lr':           [0.05, 0.1],
     'weight_decay': [0.001, 5e-4, 5e-3],
     'max_epochs':   [1000],
