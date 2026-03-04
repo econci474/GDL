@@ -880,7 +880,8 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
 
 
 def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
-                                   split_indices=None, split_sides=None):
+                                   split_indices=None, split_sides=None,
+                                   loss_type='ce_only'):
     """
     Variant of plot_entropy_vs_prob_aggregated for datasets with multiple train/val/test splits
     (e.g. Roman-Empire with split0–split9).  Pools all val+test observations across all splits
@@ -1085,7 +1086,7 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
                   else f'split{split_indices[0]}')
     sides_str  = '+'.join(split_sides)
     fig.suptitle(
-        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {splits_str} ({sides_str})\n'
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {splits_str} ({sides_str})  [{_pretty_lt(loss_type)}]\n'
         f'Per-Node Mean Entropy vs Mean Correct-Class Probability',
         fontsize=14, fontweight='bold', y=0.985
     )
@@ -1104,7 +1105,7 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     seed_tag = 'all' if set(seeds) == set(config.get('seeds', seeds)) else '_'.join(map(str, seeds))
-    stem = f'{dataset}_{model}_k{K}_seed_{seed_tag}_{splits_str}_{sides_str}'
+    stem = f'{dataset}_{model}_k{K}_seed_{seed_tag}_{splits_str}_{sides_str}{_fig_lt(loss_type)}'
 
     combined_path = figures_dir / f'{stem}_entropy_vs_prob_with_trajectories.png'
     plt.savefig(combined_path, dpi=150, bbox_inches='tight')
