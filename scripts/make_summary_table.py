@@ -5,6 +5,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
 import sys
+from scipy.stats import ttest_rel
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as cfg
@@ -68,8 +69,9 @@ def load_and_agg(path):
     grp_cols = ["dataset", "loss_type", "K"]
     if "band_lower" in df.columns:
         grp_cols += ["band_lower", "band_upper"]
+    # dropna=False keeps ce_only rows whose band_lower/band_upper are NaN
     agg = (
-        df.groupby(grp_cols)["test_acc_pct"]
+        df.groupby(grp_cols, dropna=False)["test_acc_pct"]
         .agg(["mean", "std"])
         .reset_index()
     )
@@ -79,28 +81,80 @@ def load_and_agg(path):
     agg["cell"] = agg.apply(lambda r: f"{r['mean']:.1f} \u00b1 {r['std']:.1f}", axis=1)
     return agg
 
+
+def load_raw(path):
+    """Load per-seed rows for significance testing."""
+    if path is None or not path.exists():
+        return None
+    return pd.read_csv(path)
+
+
+def get_per_seed_acc(raw_df, ds, loss_type, K):
+    """Return mean-over-splits per-seed test accuracies, sorted by seed."""
+    if raw_df is None:
+        return None
+    mask = ((raw_df["dataset"] == ds) &
+            (raw_df["loss_type"] == loss_type) &
+            (raw_df["K"] == K))
+    rows = raw_df[mask]
+    if rows.empty:
+        return None
+    return rows.groupby("seed")["test_acc"].mean().sort_index().values
+
+
+def is_significant(baseline_accs, treatment_accs, alpha=0.05):
+    """Paired t-test: True if treatment is significantly different from baseline."""
+    if baseline_accs is None or treatment_accs is None:
+        return False
+    n = min(len(baseline_accs), len(treatment_accs))
+    if n < 2:
+        return False
+    try:
+        _, p = ttest_rel(treatment_accs[:n], baseline_accs[:n])
+        return bool(p < alpha)
+    except Exception:
+        return False
+
 agg_main   = load_and_agg(CSV_MAIN) if CSV_MAIN and CSV_MAIN.exists() else None
 agg_band10 = load_and_agg(CSV_BAND10) if CSV_BAND10 and CSV_BAND10.exists() else None
 agg_band15 = load_and_agg(CSV_BAND15) if CSV_BAND15 and CSV_BAND15.exists() else None
 
+raw_main   = load_raw(CSV_MAIN)
+raw_band10 = load_raw(CSV_BAND10)
+raw_band15 = load_raw(CSV_BAND15)
+
 def lookup(ds, loss_type, band_lower, band_upper, K):
-    """Return formatted cell string, or '-' if not found."""
+    """Return formatted cell string with optional * significance marker."""
     if loss_type == "ce_only":
+        # Baseline — no significance marker
         if agg_main is None: return "-"
         src = agg_main
         mask = (src.dataset == ds) & (src.loss_type == "ce_only") & (src.K == K)
+        hits = src[mask]
+        return hits["cell"].values[0] if len(hits) else "-"
+
     elif band_lower == -1.0 and band_upper == 0.0:
-        if agg_band10 is None:
-            return "-"
+        if agg_band10 is None: return "-"
         src = agg_band10
         mask = (src.dataset == ds) & (src.loss_type == loss_type) & (src.K == K)
+        raw_src = raw_band10
     else:  # band (-1.5, 0.25)
-        if agg_band15 is None:
-            return "-"
+        if agg_band15 is None: return "-"
         src = agg_band15
         mask = (src.dataset == ds) & (src.loss_type == loss_type) & (src.K == K)
+        raw_src = raw_band15
+
     hits = src[mask]
-    return hits["cell"].values[0] if len(hits) else "-"
+    if not len(hits):
+        return "-"
+    cell = hits["cell"].values[0]
+
+    # Significance test vs CE only baseline
+    baseline = get_per_seed_acc(raw_main, ds, "ce_only", K)
+    treatment = get_per_seed_acc(raw_src, ds, loss_type, K)
+    if is_significant(baseline, treatment):
+        cell = cell + "*"
+    return cell
 
 # -- Build table arrays ----------------------------------------------------
 # col_headers: (line1=dataset, line2=config label) for each (dataset, config)
@@ -198,6 +252,13 @@ ax.text(fig_w / 2, fig_h + 0.06,
         f"{MODEL} Test Accuracy (%), {title_suffix}",
         ha="center", va="bottom", fontsize=10, fontweight="bold",
         transform=ax.transData, clip_on=False)
+
+# -- Footnote: significance marker legend ----------------------------------
+if not args.r_only:
+    ax.text(0, RULE_BOT - 0.06,
+            "* p < 0.05 vs CE only (paired t-test)",
+            ha="left", va="top", fontsize=7, color="#444444",
+            transform=ax.transData, clip_on=False)
 
 # -- Save ------------------------------------------------------------------
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
