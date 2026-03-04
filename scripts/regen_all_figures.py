@@ -105,26 +105,47 @@ def _build_loss_dir_for_row(row):
     return _build_loss_dir_candidates(loss_type, config)[0]
 
 
-# Populate the lookup: (model, dataset, K) -> loss_dir
-loss_dir_lookup = {}   # key=(model, dataset, K), value=str
+# Load three lookups: overall best, band-1.0to0.0 best, band-1.5to0.25 best
+_CSV_SUFFIXES = [
+    ("loss_dir_best",   "{model}_per_layer.csv"),
+    ("loss_dir_band1",  "{model}_band-1.0to0.0_per_layer.csv"),
+    ("loss_dir_band2",  "{model}_band-1.5to0.25_per_layer.csv"),
+]
+loss_dir_lookups = {tag: {} for tag, _ in _CSV_SUFFIXES}
 
 if args.hyperparams_dir:
     hp_dir = Path(args.hyperparams_dir)
-    for model in args.models:
-        hp_csv = hp_dir / f"best_hyperparams_{model}_per_layer.csv"
-        if not hp_csv.exists():
-            print(f"[WARN] {hp_csv.name} not found — will use default_loss_type fallback")
-            continue
-        df_hp = pd.read_csv(hp_csv)
-        for _, row in df_hp.iterrows():
-            ds   = row["dataset"]
-            K    = int(row["K"])
-            ldir = _build_loss_dir_for_row(row)
-            loss_dir_lookup[(model, ds, K)] = ldir
-        print(f"[Phase 0] Loaded {len(df_hp)} rows from {hp_csv.name}")
+    for tag, csv_pattern in _CSV_SUFFIXES:
+        for model in args.models:
+            hp_csv = hp_dir / f"best_hyperparams_{csv_pattern.format(model=model)}"
+            if not hp_csv.exists():
+                print(f"[WARN] {hp_csv.name} not found — skipping {tag}")
+                continue
+            df_hp = pd.read_csv(hp_csv)
+            for _, row in df_hp.iterrows():
+                ds  = row["dataset"]
+                K   = int(row["K"])
+                loss_dir_lookups[tag][(model, ds, K)] = _build_loss_dir_for_row(row)
+            print(f"[Phase 0] Loaded {len(df_hp)} rows from {hp_csv.name} → {tag}")
 
-def get_loss_dir(model, ds, K):
-    return loss_dir_lookup.get((model, ds, K), args.default_loss_type)
+
+def get_all_loss_dirs(model, ds, K):
+    """Return deduplicated ordered list of loss_dirs for this (model, ds, K).
+    Always includes ce_only; adds the band-specific bests when available.
+    """
+    seen = set()
+    result = []
+    for ldir in [
+        "ce_only",
+        loss_dir_lookups["loss_dir_band1"].get((model, ds, K)),
+        loss_dir_lookups["loss_dir_band2"].get((model, ds, K)),
+        loss_dir_lookups["loss_dir_best"].get((model, ds, K),
+                                              args.default_loss_type),
+    ]:
+        if ldir and ldir not in seen:
+            seen.add(ldir)
+            result.append(ldir)
+    return result
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -137,68 +158,71 @@ for model in args.models:
         split_id  = 0 if is_hetero else None
 
         for K in args.k_values:
-            loss_dir = get_loss_dir(model, ds, K)
-            curvature_loss_dirs_by_model[model].add(loss_dir)
-            label = f"{model}/{ds}/K={K} [{loss_dir}]"
+            loss_dirs = get_all_loss_dirs(model, ds, K)
+            curvature_loss_dirs_by_model[model].update(loss_dirs)
+            label = f"{model}/{ds}/K={K}"
 
-            # ── Phase 1: Extract ─────────────────────────────────────────────
-            if not args.skip_extract and not args.sep_only and not args.entropy_only:
-                for seed in args.seeds:
-                    cmd = [py, "src/extract_classifier_outputs.py",
-                           "--dataset", ds, "--model", model,
-                           "--K", str(K), "--seed", str(seed),
-                           "--loss-type", loss_dir]
-                    if is_hetero:
-                        cmd += ["--split-id", str(split_id)]
-                    if args.classifier_heads_dir:
-                        cmd += ["--classifier-heads-dir", args.classifier_heads_dir]
-                    run(cmd, f"EXTRACT  {label}  seed={seed}")
+            for loss_dir in loss_dirs:
+                label_ld = f"{label} [{loss_dir}]"
 
-            if args.extract_only:
-                continue
+                # ── Phase 1: Extract ────────────────────────────────────────────
+                if not args.skip_extract and not args.sep_only and not args.entropy_only:
+                    for seed in args.seeds:
+                        cmd = [py, "src/extract_classifier_outputs.py",
+                               "--dataset", ds, "--model", model,
+                               "--K", str(K), "--seed", str(seed),
+                               "--loss-type", loss_dir]
+                        if is_hetero:
+                            cmd += ["--split-id", str(split_id)]
+                        if args.classifier_heads_dir:
+                            cmd += ["--classifier-heads-dir", args.classifier_heads_dir]
+                        run(cmd, f"EXTRACT  {label_ld}  seed={seed}")
 
-            # ── Phase 2: Separability ────────────────────────────────────────
-            if not args.entropy_only:
-                for seed in args.seeds:
+                if args.extract_only:
+                    continue
+
+                # ── Phase 2: Separability ──────────────────────────────────────
+                if not args.entropy_only:
+                    for seed in args.seeds:
+                        cmd = [py, "src/separability_metrics_classifier_heads.py",
+                               "--dataset", ds, "--model", model,
+                               "--K", str(K), "--seed", str(seed),
+                               "--loss-type", loss_dir] + ckpt_dir_flag()
+                        if is_hetero:
+                            cmd += ["--split-id", str(split_id)]
+                        run(cmd, f"SEPARABILITY  {label_ld}  seed={seed}")
+
+                    # Aggregated (all seeds)
+                    seeds_str = ",".join(str(s) for s in args.seeds)
                     cmd = [py, "src/separability_metrics_classifier_heads.py",
                            "--dataset", ds, "--model", model,
-                           "--K", str(K), "--seed", str(seed),
+                           "--K", str(K), "--seed", seeds_str,
                            "--loss-type", loss_dir] + ckpt_dir_flag()
                     if is_hetero:
                         cmd += ["--split-id", str(split_id)]
-                    run(cmd, f"SEPARABILITY  {label}  seed={seed}")
+                    run(cmd, f"SEPARABILITY agg  {label_ld}  seeds={seeds_str}")
 
-                # Aggregated (all seeds)
-                seeds_str = ",".join(str(s) for s in args.seeds)
-                cmd = [py, "src/separability_metrics_classifier_heads.py",
-                       "--dataset", ds, "--model", model,
-                       "--K", str(K), "--seed", seeds_str,
-                       "--loss-type", loss_dir] + ckpt_dir_flag()
-                if is_hetero:
-                    cmd += ["--split-id", str(split_id)]
-                run(cmd, f"SEPARABILITY agg  {label}  seeds={seeds_str}")
+                # ── Phase 3: Entropy ────────────────────────────────────────────
+                if not args.sep_only:
+                    for plot_type in args.plot_types:
+                        for seed in args.seeds:
+                            cmd = [py, "src/plot_node_entropy_vs_prob.py",
+                                   "--dataset", ds, "--model", model,
+                                   "--K", str(K), "--seed", str(seed),
+                                   "--split", "val", "--plot_type", plot_type]
+                            if is_hetero:
+                                cmd += ["--split_idx", str(split_id)]
+                            run(cmd, f"ENTROPY {plot_type}  {label_ld}  seed={seed}")
 
-            # ── Phase 3: Entropy ─────────────────────────────────────────────
-            if not args.sep_only:
-                for plot_type in args.plot_types:
-                    for seed in args.seeds:
+                        # Aggregated
+                        seeds_str = ",".join(str(s) for s in args.seeds)
                         cmd = [py, "src/plot_node_entropy_vs_prob.py",
                                "--dataset", ds, "--model", model,
-                               "--K", str(K), "--seed", str(seed),
+                               "--K", str(K), "--seed", seeds_str,
                                "--split", "val", "--plot_type", plot_type]
                         if is_hetero:
                             cmd += ["--split_idx", str(split_id)]
-                        run(cmd, f"ENTROPY {plot_type}  {label}  seed={seed}")
-
-                    # Aggregated
-                    seeds_str = ",".join(str(s) for s in args.seeds)
-                    cmd = [py, "src/plot_node_entropy_vs_prob.py",
-                           "--dataset", ds, "--model", model,
-                           "--K", str(K), "--seed", seeds_str,
-                           "--split", "val", "--plot_type", plot_type]
-                    if is_hetero:
-                        cmd += ["--split_idx", str(split_id)]
-                    run(cmd, f"ENTROPY {plot_type} agg  {label}  seeds={seeds_str}")
+                        run(cmd, f"ENTROPY {plot_type} agg  {label_ld}  seeds={seeds_str}")
 
 # ── Phase 4: Curvature violations (once per model, all datasets) ──────────────
 if not args.sep_only and not args.entropy_only and not args.extract_only:
