@@ -88,6 +88,52 @@ def calc_entropy(probs):
 
 HETERO_DATASETS = {"Roman-empire", "Squirrel"}
 
+
+def _loss_dir_candidates(loss_dir: str) -> list:
+    """Return all plausible directory names for a given loss_dir string.
+
+    For ce_plus_R configs, the directory may or may not carry an explicit
+    band suffix for the default band (-1.0, 0.0), e.g.:
+      ce_plus_R_R10.0_smooth                    (no suffix — primary)
+      ce_plus_R_R10.0_smooth_band-1.0to0.0      (explicit .1f)
+      ce_plus_R_R10.0_smooth_band-1.00to0.00    (explicit .2f)
+    """
+    import re
+    m = re.match(
+        r'ce_plus_R_R([\d.]+)_smooth(?:_band([-\d.]+)to([-\d.]+))?$', loss_dir
+    )
+    if not m:
+        return [loss_dir]
+    lr  = m.group(1)
+    bl  = float(m.group(2)) if m.group(2) else -1.0
+    bu  = float(m.group(3)) if m.group(3) else  0.0
+    base = f'ce_plus_R_R{lr}_smooth'
+    if bl == -1.0 and bu == 0.0:   # default band
+        return [base,
+                f'{base}_band{bl:.1f}to{bu:.1f}',
+                f'{base}_band{bl:.2f}to{bu:.2f}']
+    return [f'{base}_band{bl:.1f}to{bu:.1f}',
+            f'{base}_band{bl:.2f}to{bu:.2f}',
+            base]
+
+
+def _find_probs_path(loss_type, dataset, model, K, seed, split_id,
+                     classifier_heads_dir=None):
+    """Return the first existing layer_probs.npz path, trying all candidate dirs."""
+    heads = Path(classifier_heads_dir) if classifier_heads_dir else Path(cfg.classifier_heads_dir)
+    for cand in _loss_dir_candidates(loss_type):
+        base = heads / cand / dataset / model / f'seed_{seed}' / f'K_{K}'
+        if split_id is not None:
+            base = base / f'split_{split_id}'
+        p = base / 'layer_probs.npz'
+        if p.exists():
+            return p
+    # Return primary path for the error message
+    base = heads / _loss_dir_candidates(loss_type)[0] / dataset / model / f'seed_{seed}' / f'K_{K}'
+    if split_id is not None:
+        base = base / f'split_{split_id}'
+    return base / 'layer_probs.npz'
+
 # Mapping of known directory-name truncations → human-readable labels.
 # (build_loss_dir used :.1f which rounds 0.25 → "0.2" via banker's rounding)
 _BAND_LABEL_FIXES = {
@@ -139,11 +185,8 @@ def compute_separability_from_classifier_outputs(dataset, model, K, seed, loss_t
         split_mask = trm
     labels_split = labels[split_mask]
 
-    heads_dir = Path(classifier_heads_dir) if classifier_heads_dir else Path(cfg.classifier_heads_dir)
-    base_dir  = heads_dir / loss_type / dataset / model / f'seed_{seed}' / f'K_{K}'
-    if split_id is not None:
-        base_dir = base_dir / f'split_{split_id}'
-    probs_path = base_dir / 'layer_probs.npz'
+    probs_path = _find_probs_path(loss_type, dataset, model, K, seed,
+                                   split_id, classifier_heads_dir)
     if not probs_path.exists():
         raise FileNotFoundError(f"Classifier outputs not found: {probs_path}")
 
