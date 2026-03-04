@@ -19,13 +19,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as cfg
 
 
+def _lt(loss_type: str) -> str:
+    """Return a filename suffix for the given loss_type.
+
+    Always includes the loss type so classifier-head plots are never
+    confused with linear probe plots (e.g. '_ce_only', '_ce_plus_R_...').
+    """
+    return '_' + (loss_type or 'ce_only')
+
+
 def entropy_from_probs(probs, eps=1e-10):
     """Compute entropy from probability distributions."""
     probs = np.clip(probs, eps, 1.0)
     return -np.sum(probs * np.log(probs), axis=1)
 
 
-def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
+def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val', loss_type='ce_only'):
     """
     Create scatter plot of entropy vs correct-class probability.
     
@@ -38,7 +47,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
         split: 'val' or 'test'
     """
     # Load per-node arrays
-    arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}_pernode.npz'
+    arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{_lt(loss_type)}_pernode.npz'
     
     if not arrays_path.exists():
         print(f"Error: Per-node arrays not found at {arrays_path}")
@@ -137,13 +146,13 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}_{split}_entropy_vs_prob.png'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}{_lt(loss_type)}_{split}_entropy_vs_prob.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
 
 
-def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated'):
+def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated', loss_type='ce_only'):
     """
     Create aggregated scatter plot with mean probabilities and entropies across seeds.
     
@@ -175,7 +184,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     k_list = None
     
     for seed in seeds:
-        arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}_pernode.npz'
+        arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{_lt(loss_type)}_pernode.npz'
         
         if not arrays_path.exists():
             print(f"Warning: Per-node arrays not found for seed {seed}, skipping")
@@ -423,7 +432,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     # Always use 'seed_all' for any multi-seed aggregated plot
-    stem = f'{dataset}_{model}_k{K}_seed_all_{split}'
+    stem = f'{dataset}_{model}_k{K}_seed_all{_lt(loss_type)}_{split}'
 
     output_path = figures_dir / f'{stem}_entropy_vs_prob_with_trajectories.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -433,6 +442,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     # ------------------------------------------------------------------ #
     # Layers-only figure (depth scatter panels)                           #
     # ------------------------------------------------------------------ #
+    ncols = min(3, num_depths)  # re-derive ncols for layers-only figure
     fig_l = plt.figure(figsize=(5 * ncols, 4 * nrows_scatter))
     gs_l  = fig_l.add_gridspec(nrows_scatter, ncols, hspace=0.35, wspace=0.2)
     for idx, k in enumerate(k_list):
@@ -560,7 +570,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     plt.close(fig_c)
 
 
-def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', split_idx=None):
+def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', split_idx=None, loss_type='ce_only'):
     """
     Create scatter plot of entropy vs binary correctness (correct/incorrect).
     
@@ -575,7 +585,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', sp
     """
     # Build path with optional split suffix
     split_sfx   = f'_split{split_idx}' if split_idx is not None else ''
-    arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{split_sfx}_pernode.npz'
+    arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{split_sfx}{_lt(loss_type)}_pernode.npz'
     
     if not arrays_path.exists():
         print(f"Error: Per-node arrays not found at {arrays_path}")
@@ -681,13 +691,13 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', sp
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}_{split}_entropy_vs_correctness.png'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}{_lt(loss_type)}_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
 
 
-def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated', split_idx=None):
+def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, split='val', seed_mode='aggregated', split_idx=None, loss_type='ce_only'):
     """
     Create aggregated correctness plot: average probs across seeds, then classify by argmax.
     
@@ -730,7 +740,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     split_sfx = f'_split{split_idx}' if split_idx is not None else ''
 
     for seed in seeds:
-        arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{split_sfx}_pernode.npz'
+        arrays_path = Path(config['results_dir']) / 'arrays' / f'{dataset}_{model}_K{K}_seed{seed}{split_sfx}{_lt(loss_type)}_pernode.npz'
         
         if not arrays_path.exists():
             print(f"Warning: Per-node arrays not found for seed {seed}, skipping")
@@ -831,7 +841,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     # Always use 'seed_all' for any multi-seed aggregated plot
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all_{split}_entropy_vs_correctness.png'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all{_lt(loss_type)}_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
@@ -1198,10 +1208,13 @@ def main():
                         help='If set, only load data from this split index (e.g. 0 for split0). '
                              'Works with multi-split datasets like Roman-Empire. '
                              'Combine with --split val/test/all to control which side(s) are included.')
-    parser.add_argument('--plot_type', type=str, default='probability', 
+    parser.add_argument('--plot_type', type=str, default='probability',
                        choices=['probability', 'correctness'],
                        help='Plot type: probability (per-class) or correctness (binary)')
-    
+    parser.add_argument('--loss-type', type=str, default='ce_only',
+                       help='Loss type directory name (e.g. ce_only, ce_plus_R_band-1.0to0.0). '
+                            'Used to locate pernode arrays and suffix output filenames.')
+
     args = parser.parse_args()
     
     # Convert config to dict
@@ -1221,19 +1234,21 @@ def main():
         seeds = None
         seed_mode = 'single'
     
+    loss_type = args.loss_type
+
     if args.plot_type == 'correctness':
         # Correctness plot (binary: correct/incorrect)
         if seed_mode == 'single':
             print(f"Creating entropy vs correctness plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seed={seed}, split={args.split}")
+            print(f"K={args.K}, seed={seed}, split={args.split}, loss_type={loss_type}")
             plot_entropy_vs_correctness(args.dataset, args.model, args.K, seed, config, args.split,
-                                        split_idx=args.split_idx)
+                                        split_idx=args.split_idx, loss_type=loss_type)
         else:
             # Aggregated across seeds
             print(f"Creating aggregated entropy vs correctness plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seeds={seeds}, split={args.split}")
+            print(f"K={args.K}, seeds={seeds}, split={args.split}, loss_type={loss_type}")
             plot_entropy_vs_correctness_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode,
-                                                   split_idx=args.split_idx)
+                                                   split_idx=args.split_idx, loss_type=loss_type)
 
     else:
         # Probability plot (per-class)
@@ -1245,20 +1260,22 @@ def main():
             # allsplits always needs a list of seeds
             seeds_for_allsplits = seeds if seeds is not None else [seed]
             print(f"Creating all-splits entropy vs probability plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seeds={seeds_for_allsplits}, split_indices={split_indices}, split_sides={split_sides}")
+            print(f"K={args.K}, seeds={seeds_for_allsplits}, split_indices={split_indices}, split_sides={split_sides}, loss_type={loss_type}")
             plot_entropy_vs_prob_allsplits(
                 args.dataset, args.model, args.K, seeds_for_allsplits, config,
                 split_indices=split_indices, split_sides=split_sides
             )
         elif seed_mode == 'single':
             print(f"Creating entropy vs probability plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seed={seed}, split={args.split}")
-            plot_entropy_vs_prob(args.dataset, args.model, args.K, seed, config, args.split)
+            print(f"K={args.K}, seed={seed}, split={args.split}, loss_type={loss_type}")
+            plot_entropy_vs_prob(args.dataset, args.model, args.K, seed, config, args.split,
+                                 loss_type=loss_type)
         else:
             # Aggregated plot across seeds
             print(f"Creating aggregated entropy vs probability plot for {args.dataset}/{args.model}")
-            print(f"K={args.K}, seeds={seeds}, split={args.split}")
-            plot_entropy_vs_prob_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode)
+            print(f"K={args.K}, seeds={seeds}, split={args.split}, loss_type={loss_type}")
+            plot_entropy_vs_prob_aggregated(args.dataset, args.model, args.K, seeds, config, args.split, seed_mode,
+                                            loss_type=loss_type)
 
     print("\nDone!")
 

@@ -209,7 +209,8 @@ for model in args.models:
                             cmd = [py, "src/plot_node_entropy_vs_prob.py",
                                    "--dataset", ds, "--model", model,
                                    "--K", str(K), "--seed", str(seed),
-                                   "--split", "val", "--plot_type", plot_type]
+                                   "--split", "val", "--plot_type", plot_type,
+                                   "--loss-type", loss_dir]
                             if is_hetero:
                                 cmd += ["--split_idx", str(split_id)]
                             run(cmd, f"ENTROPY {plot_type}  {label_ld}  seed={seed}")
@@ -219,7 +220,8 @@ for model in args.models:
                         cmd = [py, "src/plot_node_entropy_vs_prob.py",
                                "--dataset", ds, "--model", model,
                                "--K", str(K), "--seed", seeds_str,
-                               "--split", "val", "--plot_type", plot_type]
+                               "--split", "val", "--plot_type", plot_type,
+                               "--loss-type", loss_dir]
                         if is_hetero:
                             cmd += ["--split_idx", str(split_id)]
                         run(cmd, f"ENTROPY {plot_type} agg  {label_ld}  seeds={seeds_str}")
