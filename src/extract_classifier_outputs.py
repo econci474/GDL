@@ -76,10 +76,7 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     
     # Load dataset - heterophilous datasets automatically have 2D masks
     data, num_classes, dataset_kind = load_dataset(dataset_name)
-    
-    # Create model (same architecture as training)
-    model = build_model(model_name, data, num_classes, K, config)
-    
+
     # Load trained checkpoint (with conditional path for splits)
     base_path = Path(cfg.classifier_heads_dir) / loss_type / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
     
