@@ -53,38 +53,60 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
 
 
 def _resolve_ckpt(loss_dir, dataset_name, model_name, K, seed, split_id, heads_dir):
-    """Find best.pt by trying all plausible director names for a loss_dir string.
+    """Find best.pt by trying all plausible directory names for a loss_dir string.
 
-    Handles the historical naming inconsistency where the default band
-    (-1.0, 0.0) may or may not appear as an explicit suffix:
-      ce_plus_R_R10.0_smooth          (no band suffix — primary)
-      ce_plus_R_R10.0_smooth_band-1.0to0.0   (explicit .1f)
-      ce_plus_R_R10.0_smooth_band-1.00to0.00 (explicit .2f)
+    Handles historical naming inconsistencies:
+      - default band (-1.0, 0.0) may or may not have an explicit suffix
+      - _floor<val> segment may or may not be present
+      - _perclass segment may or may not be present
+    Tries all combinations, most-preferred first.
     """
     import re
     candidates = [loss_dir]  # exact string first (always a candidate)
 
     m = re.match(
-        r'ce_plus_R_R([\d.]+)_smooth(?:_band([-\d.]+)to([-\d.]+))?$', loss_dir
+        r'ce_plus_R_R([\d.]+)_smooth'
+        r'(?:_(floor[\d.]+))?'
+        r'(?:_(perclass))?'
+        r'(?:_band([-\d.]+)to([-\d.]+))?$',
+        loss_dir
     )
     if m:
-        lr  = m.group(1)
-        bl  = float(m.group(2)) if m.group(2) else -1.0
-        bu  = float(m.group(3)) if m.group(3) else  0.0
-        base_no_band = f'ce_plus_R_R{lr}_smooth'
-        is_default   = (bl == -1.0 and bu == 0.0)
+        lr         = m.group(1)
+        floor_part = m.group(2)  # e.g. 'floor0.10' or None
+        pc_part    = m.group(3)  # 'perclass' or None
+        bl         = float(m.group(4)) if m.group(4) else -1.0
+        bu         = float(m.group(5)) if m.group(5) else  0.0
+        is_default = (bl == -1.0 and bu == 0.0)
+
+        # Build base stems: try with extras first, then without each
+        bare = f'ce_plus_R_R{lr}_smooth'
+        bases = [bare]
+        if floor_part or pc_part:
+            # also try the fully-decorated base and stripped variants
+            decorated = bare
+            if floor_part:
+                decorated = f'{decorated}_{floor_part}'
+            if pc_part:
+                decorated = f'{decorated}_{pc_part}'
+            bases = [decorated, bare]  # prefer decorated; fall back to bare
+
         if is_default:
-            candidates = [
-                base_no_band,
-                f'{base_no_band}_band{bl:.1f}to{bu:.1f}',
-                f'{base_no_band}_band{bl:.2f}to{bu:.2f}',
-            ]
+            candidates = []
+            for b in bases:
+                candidates += [b, f'{b}_band{bl:.1f}to{bu:.1f}', f'{b}_band{bl:.2f}to{bu:.2f}']
         else:
-            candidates = [
-                f'{base_no_band}_band{bl:.1f}to{bu:.1f}',
-                f'{base_no_band}_band{bl:.2f}to{bu:.2f}',
-                base_no_band,
-            ]
+            candidates = []
+            for b in bases:
+                candidates += [f'{b}_band{bl:.1f}to{bu:.1f}', f'{b}_band{bl:.2f}to{bu:.2f}', b]
+
+        # Deduplicate while preserving order
+        seen, deduped = set(), []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                deduped.append(c)
+        candidates = deduped
 
     heads = Path(heads_dir)
     for cand in candidates:
