@@ -914,7 +914,7 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
     for seed in seeds:
         for split_idx in split_indices:
             arrays_path = (Path(config['results_dir']) / 'arrays' /
-                           f'{dataset}_{model}_K{K}_seed{seed}_split{split_idx}_pernode.npz')
+                           f'{dataset}_{model}_K{K}_seed{seed}_split{split_idx}{_lt(loss_type)}_pernode.npz')
             if not arrays_path.exists():
                 print(f"  Warning: {arrays_path.name} not found, skipping")
                 continue
