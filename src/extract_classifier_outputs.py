@@ -90,8 +90,20 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    
+
     checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    # Override hidden_dim / gat_heads from the checkpoint's stored hyperparams
+    # so the model architecture matches exactly what was trained.
+    ckpt_hps = checkpoint.get('hyperparams', {})
+    if ckpt_hps:
+        config = dict(config)  # avoid mutating the caller's dict
+        for key in ('hidden_dim', 'gat_heads', 'sage_aggr'):
+            if key in ckpt_hps:
+                config[key] = ckpt_hps[key]
+
+    # (Re-)build model with the correct architecture before loading weights
+    model = build_model(model_name, data, num_classes, K, config)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
     model.eval()
@@ -152,6 +164,21 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     
     np.savez(logits_path, **logits_dict)
     np.savez(probs_path, **probs_dict)
+
+    # Also write pernode.npz to results/arrays/ for plot_node_entropy_vs_prob.py.
+    # Keys: p_val_k, p_test_k (match the format probe.py produces).
+    arrays_dir = Path(config['results_dir']) / 'arrays'
+    arrays_dir.mkdir(parents=True, exist_ok=True)
+    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
+        pernode_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}_pernode.npz'
+    else:
+        pernode_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_pernode.npz'
+    pernode_dict = {'k_list': np.arange(K + 1)}
+    for k in range(K + 1):
+        pernode_dict[f'p_val_{k}']  = probs_dict[f'val_probs_{k}']
+        pernode_dict[f'p_test_{k}'] = probs_dict[f'test_probs_{k}']
+    np.savez(pernode_path, **pernode_dict)
+    print(f"  Per-node arrays saved to: {pernode_path}")
     
     print(f"\n✓ Classifier outputs extracted!")
     print(f"  Total layers: {len(layer_logits_cpu)} (k=0..{K})")
