@@ -1296,7 +1296,8 @@ def main():
             print(f"K={args.K}, seeds={seeds_for_allsplits}, split_indices={split_indices}, split_sides={split_sides}, loss_type={loss_type}")
             plot_entropy_vs_prob_allsplits(
                 args.dataset, args.model, args.K, seeds_for_allsplits, config,
-                split_indices=split_indices, split_sides=split_sides
+                split_indices=split_indices, split_sides=split_sides,
+                loss_type=loss_type
             )
         elif seed_mode == 'single':
             print(f"Creating entropy vs probability plot for {args.dataset}/{args.model}")
