@@ -169,13 +169,18 @@ def build_loss_dir(loss_type: str, config: dict) -> str:
 def resolve_checkpoint_path(dataset, model_name, K, seed, split_id, loss_type, config):
     """Resolve the path to best.pt, trying multiple directory name variants.
 
-    Tries all plausible loss_dir names (accounting for historical format
-    differences in the band suffix) and returns the first that exists on disk.
-    If none exist, returns the primary (most-preferred) path so the caller
-    can emit a meaningful 'not found' message.
+    Collects all existing candidate paths, then verifies their stored
+    hyperparams against the expected config (hidden_dim, lr, weight_decay,
+    patience).  Returns the best-matching path.  If only one candidate exists
+    it is returned directly.  If none exist, returns the primary (most-preferred)
+    path so the caller can emit a meaningful 'not found' message.
     """
+    # Hyperparameter keys used to distinguish multiple matching checkpoints.
+    _VERIFY_KEYS = ("hidden_dim", "lr", "weight_decay", "patience")
+
     candidates = _build_loss_dir_candidates(loss_type or "ce_only", config)
     primary_path = None
+    existing = []  # (path, loss_dir) pairs that exist on disk
 
     for i, loss_dir in enumerate(candidates):
         base_dir = (
@@ -189,9 +194,38 @@ def resolve_checkpoint_path(dataset, model_name, K, seed, split_id, loss_type, c
         if i == 0:
             primary_path = path  # saved for error messages
         if path.exists():
-            return path
+            existing.append((path, loss_dir))
 
-    return primary_path  # not found — caller will print skip message
+    if not existing:
+        return primary_path  # not found — caller will print skip message
+
+    if len(existing) == 1:
+        return existing[0][0]
+
+    # Multiple candidates exist — verify stored hyperparams against expected.
+    import torch as _torch
+    for path, loss_dir in existing:
+        try:
+            ckpt_hp = _torch.load(
+                path, map_location="cpu", weights_only=False
+            ).get("hyperparams", {})
+            if all(
+                abs(float(ckpt_hp.get(k, config.get(k, 0))) -
+                    float(config.get(k, ckpt_hp.get(k, 0)))) < 1e-9
+                for k in _VERIFY_KEYS
+                if config.get(k) is not None
+            ):
+                return path
+        except Exception:
+            pass  # unloadable checkpoint — skip
+
+    # No exact match — fall back to first existing (original behaviour).
+    print(
+        f"  [WARN] resolve_checkpoint_path: multiple candidates found for "
+        f"{dataset}/{model_name}/K{K}/seed{seed} but none matched expected "
+        f"hyperparams exactly. Using first existing: {existing[0][1]}"
+    )
+    return existing[0][0]
 
 
 def append_final_result(row: dict) -> None:
