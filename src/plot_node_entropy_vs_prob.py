@@ -455,14 +455,14 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         ax.set_xlim(left=0); ax.set_ylim(0, 1)
         if idx == 0:
             ax.legend(loc='best', fontsize=8, framealpha=0.9)
-    fig_l.suptitle(
-        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
-        f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Layer',
-        fontsize=13, fontweight='bold'
-    )
     top_l = min(0.90, 0.78 + 0.04 * max(nrows_scatter - 1, 0))
     fig_l.subplots_adjust(top=top_l, bottom=0.06, left=0.07, right=0.97,
                           hspace=0.35, wspace=0.2)
+    fig_l.suptitle(
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
+        f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Layer',
+        fontsize=13, fontweight='bold', x=0.5, y=min(0.98, top_l + 0.10)
+    )
     layers_path = figures_dir / f'{stem}_layers.png'
     fig_l.savefig(layers_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {layers_path}")
@@ -542,13 +542,17 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         cbar_c.set_label('Depth k', fontsize=11)
         cbar_c.set_ticks(k_list)
 
-    top_c = 0.76 + 0.05 * (traj_nrows - 1)   # leave room for 2-line suptitle
+    # top_c / y_title: leave enough room for 2-line suptitle above panel titles
+    # Panel titles render ABOVE the axes frame, so we need clear space above top_c.
+    _fig_h = 4.5 * traj_nrows + 1.0  # approximate figure height in inches
+    top_c   = min(0.94, 0.97 - 0.90 / _fig_h)
+    y_title = min(0.98, top_c + 0.06 + 0.30 / _fig_h)
     fig_c.subplots_adjust(top=top_c, bottom=0.08, left=0.07, right=0.96,
                           hspace=0.3, wspace=0.2)
     fig_c.suptitle(
         f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
         f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Class',
-        fontsize=13, fontweight='bold', y=top_c + 0.05
+        fontsize=13, fontweight='bold', x=0.5, y=y_title
     )
     classes_path = figures_dir / f'{stem}_classes.png'
     fig_c.savefig(classes_path, dpi=150, bbox_inches='tight')
@@ -1165,13 +1169,15 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
         cbar_c.set_label('Depth k', fontsize=11)
         cbar_c.set_ticks(k_list)
 
-    top_c = min(0.96, 0.82 + 0.05 * (traj_nrows - 1))  # clamp to valid range
+    _fig_h = 4.5 * traj_nrows + 1.0
+    top_c   = min(0.94, 0.97 - 0.90 / _fig_h)
+    y_title = min(0.98, top_c + 0.06 + 0.30 / _fig_h)
     fig_c.subplots_adjust(top=top_c, bottom=0.06, left=0.07, right=0.96,
                           hspace=0.3, wspace=0.2)
     fig_c.suptitle(
         f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {splits_str} ({sides_str})\n'
         f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Class',
-        fontsize=13, fontweight='bold'
+        fontsize=13, fontweight='bold', x=0.5, y=y_title
     )
     classes_path = figures_dir / f'{stem}_classes.png'
     fig_c.savefig(classes_path, dpi=150, bbox_inches='tight')
