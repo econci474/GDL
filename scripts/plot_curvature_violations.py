@@ -54,20 +54,48 @@ def second_finite_diff(H_kN):
     return H_kN[2:] - 2 * H_kN[1:-1] + H_kN[:-2]
 
 
+def _candidate_bases(loss_type, dataset, model, K, seed, split_id,
+                     classifier_heads_dir):
+    """Return all plausible base paths for a loss_type, most-preferred first.
+
+    Mirrors evaluate_final.resolve_checkpoint_path: tries BOTH the primary
+    (no band suffix for default band) and the explicit-suffix variant so that
+    directories named either way are found.
+    """
+    from src.evaluate_final import _build_loss_dir_candidates
+
+    # Reconstruct a minimal config so _build_loss_dir_candidates can work.
+    # Parse lambda_R and band from the loss_type string directly.
+    import re
+    candidates_lt = [loss_type]  # fallback: just the string as-is
+    m = re.match(
+        r"ce_plus_R_R([\d.]+)_smooth(?:_band([-\d.]+)to([-\d.]+))?",
+        loss_type
+    )
+    if m:
+        lambda_R   = float(m.group(1))
+        band_lower = float(m.group(2)) if m.group(2) else -1.0
+        band_upper = float(m.group(3)) if m.group(3) else  0.0
+        fake_cfg = {
+            "lambda_R": lambda_R, "R_mode": "smooth",
+            "entropy_floor": None, "per_class_R": False,
+            "band_lower": band_lower, "band_upper": band_upper,
+        }
+        candidates_lt = _build_loss_dir_candidates("ce_plus_R", fake_cfg)
+
+    heads_dir = Path(classifier_heads_dir or cfg.classifier_heads_dir)
+    bases = []
+    for lt in candidates_lt:
+        base = heads_dir / lt / dataset / model / f"seed_{seed}" / f"K_{K}"
+        if split_id is not None:
+            base = base / f"split_{split_id}"
+        bases.append(base)
+    return bases
+
+
 def load_violation_stats(dataset, model, K, seed, loss_type,
                          split_id=None, classifier_heads_dir=None,
                          num_classes=None):
-    heads_dir = Path(classifier_heads_dir or cfg.classifier_heads_dir)
-    base = heads_dir / loss_type / dataset / model / f"seed_{seed}" / f"K_{K}"
-    if split_id is not None:
-        base = base / f"split_{split_id}"
-
-    val_path   = base / "layer_probs.npz"
-    train_path = base / "layer_probs_train.npz"
-
-    if not val_path.exists():
-        raise FileNotFoundError(val_path)
-
     def stack_from(npz_path, prefix):
         if not npz_path.exists():
             return None
@@ -79,6 +107,22 @@ def load_violation_stats(dataset, model, K, seed, loss_type,
                 return None
             layers.append(d[key])
         return np.stack(layers, axis=0)
+
+    # Try candidate directories in preference order
+    val_path = train_path = None
+    for base in _candidate_bases(loss_type, dataset, model, K, seed,
+                                 split_id, classifier_heads_dir):
+        vp = base / "layer_probs.npz"
+        if vp.exists():
+            val_path   = vp
+            train_path = base / "layer_probs_train.npz"
+            break
+
+    if val_path is None:
+        raise FileNotFoundError(
+            f"layer_probs.npz not found for {dataset}/{model}/K{K}/seed{seed}"
+            f"  loss_type={loss_type}"
+        )
 
     train_stack = stack_from(train_path, "train")
     val_stack   = stack_from(val_path,   "val")
