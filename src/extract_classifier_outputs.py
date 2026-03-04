@@ -166,10 +166,12 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     # Keys: p_val_k, p_test_k (match the format probe.py produces).
     arrays_dir = Path(config['results_dir']) / 'arrays'
     arrays_dir.mkdir(parents=True, exist_ok=True)
+    # Include loss_type in filename so different loss configs don't overwrite each other
+    lt_sfx = '_' + (loss_type or 'ce_only')
     if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
-        pernode_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}_pernode.npz'
+        pernode_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}{lt_sfx}_pernode.npz'
     else:
-        pernode_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_pernode.npz'
+        pernode_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}{lt_sfx}_pernode.npz'
     pernode_dict = {'k_list': np.arange(K + 1)}
     for k in range(K + 1):
         pernode_dict[f'p_val_{k}']  = probs_dict[f'val_probs_{k}']
