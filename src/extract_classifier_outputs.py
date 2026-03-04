@@ -77,14 +77,16 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     # Load dataset - heterophilous datasets automatically have 2D masks
     data, num_classes, dataset_kind = load_dataset(dataset_name)
 
-    # Load trained checkpoint (with conditional path for splits)
-    base_path = Path(cfg.classifier_heads_dir) / loss_type / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
-    
-    if dataset_name in HETEROPHILOUS_DATASETS and split_id is not None:
-        checkpoint_path = base_path / f'split_{split_id}' / 'best.pt'
-    else:
-        checkpoint_path = base_path / 'best.pt'
-    
+    # Load trained checkpoint — use multi-candidate resolution so that
+    # directories named with/without explicit band suffix are both found
+    # (e.g. ce_plus_R_R10.0_smooth  vs  ce_plus_R_R10.0_smooth_band-1.0to0.0).
+    from src.evaluate_final import resolve_checkpoint_path
+    checkpoint_path = resolve_checkpoint_path(
+        dataset_name, model_name, K, seed,
+        split_id if (dataset_name in HETEROPHILOUS_DATASETS) else None,
+        loss_type, config
+    )
+
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
