@@ -64,7 +64,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
     
     # Create figure with subplots
     num_depths = len(k_list)
-    ncols = min(3, num_depths)
+    ncols = max(3, min(3, num_depths))  # always at least 3 columns
     nrows = int(np.ceil(num_depths / ncols))
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
@@ -222,7 +222,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         class_mean_p_correct[k] = class_P
     
     num_depths = len(k_list)
-    ncols = min(3, num_depths)
+    ncols = max(3, min(3, num_depths))  # always at least 3 columns
     nrows_scatter = int(np.ceil(num_depths / ncols))
     nrows = nrows_scatter + 1  # +1 for trajectory panel
     height_ratios = [1] * nrows_scatter + [2]  # trajectory row is 2x taller
@@ -594,7 +594,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', sp
     
     # Create figure with subplots
     num_depths = len(k_list)
-    ncols = min(3, num_depths)
+    ncols = max(3, min(3, num_depths))  # always at least 3 columns
     nrows = int(np.ceil(num_depths / ncols))
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
@@ -744,7 +744,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     
     # Create figure with subplots
     num_depths = len(k_list)
-    ncols = min(3, num_depths)
+    ncols = max(3, min(3, num_depths))  # always at least 3 columns
     nrows = int(np.ceil(num_depths / ncols))
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
@@ -926,7 +926,7 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
         class_mean_p_correct[k] = class_P
 
     num_depths    = len(k_list)
-    ncols         = min(3, num_depths)
+    ncols         = max(3, min(3, num_depths))  # always at least 3 columns
     traj_ncols    = ncols
     traj_nrows    = int(np.ceil(num_classes / traj_ncols))
     nrows_scatter = int(np.ceil(num_depths / ncols))

@@ -21,25 +21,46 @@ try:
     TORCHMETRICS_AVAILABLE = True
 except ImportError:
     TORCHMETRICS_AVAILABLE = False
-    print("Warning: torchmetrics not available. Install with: pip install torchmetrics")
+
+try:
+    from sklearn.metrics import roc_auc_score as _sklearn_auroc
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 
 def compute_auroc_torchmetrics(H, e):
-    """AUROC for error detection using entropy as the score."""
-    if not TORCHMETRICS_AVAILABLE:
+    """AUROC for error detection using entropy as the score.
+
+    Falls back to sklearn if torchmetrics is unavailable.
+    H  : entropy scores (higher = more uncertain).
+    e  : binary labels  (1 = error, 0 = correct).
+    """
+    # --- numpy arrays for sklearn path ---
+    H_np = H.numpy() if not isinstance(H, np.ndarray) else H
+    e_np = e.numpy() if not isinstance(e, np.ndarray) else e
+
+    if len(np.unique(e_np)) < 2:
         return np.nan
-    if isinstance(H, np.ndarray):
-        H = torch.from_numpy(H).float()
-    if isinstance(e, np.ndarray):
-        e = torch.from_numpy(e).long()
-    if len(torch.unique(e)) < 2:
-        return np.nan
-    try:
-        auroc_fn = AUROC(task='binary')
-        return auroc_fn(H, e).item()
-    except Exception as ex:
-        print(f"Warning: AUROC computation failed: {ex}")
-        return np.nan
+
+    # torchmetrics path
+    if TORCHMETRICS_AVAILABLE:
+        try:
+            H_t = torch.from_numpy(H_np).float()
+            e_t = torch.from_numpy(e_np).long()
+            auroc_fn = AUROC(task='binary')
+            return auroc_fn(H_t, e_t).item()
+        except Exception as ex:
+            print(f"Warning: torchmetrics AUROC failed: {ex}")
+
+    # sklearn fallback
+    if SKLEARN_AVAILABLE:
+        try:
+            return float(_sklearn_auroc(e_np, H_np))
+        except Exception as ex:
+            print(f"Warning: sklearn AUROC failed: {ex}")
+
+    return np.nan
 
 
 def compute_cohens_d(H_wrong, H_correct):
@@ -207,6 +228,7 @@ def plot_separability_vs_k(df, df_per_class, num_classes, dataset, model, K,
     ax.axhline(0.5, color='gray', linestyle='--', alpha=0.5, label='Random')
     ax.set(xlabel='Depth k', ylabel='AUROC',
            title='Error Detection AUROC vs Depth', ylim=[0, 1])
+    ax.set_xlim(layers[0] - 0.3, layers[-1] + 0.3)  # prevent NaN-driven autoscale
     ax.grid(True, alpha=0.3); ax.legend(fontsize=9)
 
     # [0,1]  Cohen's d
@@ -238,16 +260,29 @@ def plot_separability_vs_k(df, df_per_class, num_classes, dataset, model, K,
         have_pc   = 'class_0_accuracy_mean' in df_per_class.columns
         have_pc_r = (not have_pc) and 'class_0_accuracy' in df_per_class.columns
 
-        n_by_c = {}
+        n_by_c      = {}
+        n_correct_c = {}
+        n_wrong_c   = {}
         for c in range(num_classes):
             col  = f'class_{c}_n_total'
             colm = f'class_{c}_n_total_mean' if have_pc else col
             if colm in df_per_class.columns:
-                n_by_c[c] = int(df_per_class[colm].iloc[0])
+                n_by_c[c] = int(df_per_class[colm].iloc[-1])
             elif col in df_per_class.columns:
-                n_by_c[c] = int(df_per_class[col].iloc[0])
+                n_by_c[c] = int(df_per_class[col].iloc[-1])
             else:
                 n_by_c[c] = 0
+
+            # n_correct / n_wrong at the last depth row (k=K)
+            for tag, store in [('n_correct', n_correct_c), ('n_wrong', n_wrong_c)]:
+                raw_col  = f'class_{c}_{tag}'
+                mean_col = f'class_{c}_{tag}_mean' if have_pc else raw_col
+                if mean_col in df_per_class.columns:
+                    store[c] = int(round(df_per_class[mean_col].iloc[-1]))
+                elif raw_col in df_per_class.columns:
+                    store[c] = int(df_per_class[raw_col].iloc[-1])
+                else:
+                    store[c] = 0
 
         sc = sorted(range(num_classes), key=lambda c: n_by_c.get(c, 0))
 
@@ -263,9 +298,12 @@ def plot_separability_vs_k(df, df_per_class, num_classes, dataset, model, K,
                     s = np.zeros_like(m)
                 else:
                     continue
-                n = n_by_c.get(c, 0)
+                n        = n_by_c.get(c, 0)
+                n_ok     = n_correct_c.get(c, 0)
+                n_bad    = n_wrong_c.get(c, 0)
+                lbl = f'C{c} (n={n}: {n_ok}✓/{n_bad}✗)'
                 ax.plot(pc_k, m, 'o-', linewidth=1.5, markersize=5,
-                        label=f'C{c} (n={n})', color=colors[c])
+                        label=lbl, color=colors[c])
                 ax.fill_between(pc_k, m - s, m + s, alpha=0.12, color=colors[c])
 
             if metric == 'accuracy':
