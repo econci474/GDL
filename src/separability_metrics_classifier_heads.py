@@ -92,29 +92,54 @@ HETERO_DATASETS = {"Roman-empire", "Squirrel"}
 def _loss_dir_candidates(loss_dir: str) -> list:
     """Return all plausible directory names for a given loss_dir string.
 
-    For ce_plus_R configs, the directory may or may not carry an explicit
-    band suffix for the default band (-1.0, 0.0), e.g.:
-      ce_plus_R_R10.0_smooth                    (no suffix — primary)
-      ce_plus_R_R10.0_smooth_band-1.0to0.0      (explicit .1f)
-      ce_plus_R_R10.0_smooth_band-1.00to0.00    (explicit .2f)
+    Handles historical naming inconsistencies:
+      - default band (-1.0, 0.0) may or may not have an explicit suffix
+      - _floor<val> segment may or may not be present
+      - _perclass segment may or may not be present
+    Tries all combinations, most-preferred first.
     """
     import re
     m = re.match(
-        r'ce_plus_R_R([\d.]+)_smooth(?:_band([-\d.]+)to([-\d.]+))?$', loss_dir
+        r'ce_plus_R_R([\d.]+)_smooth'
+        r'(?:_(floor[\d.]+))?'
+        r'(?:_(perclass))?'
+        r'(?:_band([-\d.]+)to([-\d.]+))?$',
+        loss_dir
     )
     if not m:
         return [loss_dir]
-    lr  = m.group(1)
-    bl  = float(m.group(2)) if m.group(2) else -1.0
-    bu  = float(m.group(3)) if m.group(3) else  0.0
-    base = f'ce_plus_R_R{lr}_smooth'
-    if bl == -1.0 and bu == 0.0:   # default band
-        return [base,
-                f'{base}_band{bl:.1f}to{bu:.1f}',
-                f'{base}_band{bl:.2f}to{bu:.2f}']
-    return [f'{base}_band{bl:.1f}to{bu:.1f}',
-            f'{base}_band{bl:.2f}to{bu:.2f}',
-            base]
+    lr         = m.group(1)
+    floor_part = m.group(2)  # e.g. 'floor0.10' or None
+    pc_part    = m.group(3)  # 'perclass' or None
+    bl         = float(m.group(4)) if m.group(4) else -1.0
+    bu         = float(m.group(5)) if m.group(5) else  0.0
+
+    bare = f'ce_plus_R_R{lr}_smooth'
+    bases = [bare]
+    if floor_part or pc_part:
+        decorated = bare
+        if floor_part:
+            decorated = f'{decorated}_{floor_part}'
+        if pc_part:
+            decorated = f'{decorated}_{pc_part}'
+        bases = [decorated, bare]  # prefer decorated; fall back to bare
+
+    if bl == -1.0 and bu == 0.0:  # default band
+        candidates = []
+        for b in bases:
+            candidates += [b, f'{b}_band{bl:.1f}to{bu:.1f}', f'{b}_band{bl:.2f}to{bu:.2f}']
+    else:
+        candidates = []
+        for b in bases:
+            candidates += [f'{b}_band{bl:.1f}to{bu:.1f}', f'{b}_band{bl:.2f}to{bu:.2f}', b]
+
+    # Deduplicate while preserving order
+    seen, deduped = set(), []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            deduped.append(c)
+    return deduped
 
 
 def _find_probs_path(loss_type, dataset, model, K, seed, split_id,
