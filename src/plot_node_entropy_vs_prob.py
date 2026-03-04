@@ -37,6 +37,29 @@ def _pretty_lt(loss_type: str) -> str:
     return lt
 
 
+def _fig_lt(loss_type: str) -> str:
+    """Return a normalised filename suffix for OUTPUT figures.
+
+    Unlike _lt() (for pernode lookups), this:
+      - Adds explicit band-1.0to0.0 when no band suffix exists
+      - Normalises known precision truncations (band-1.5to0.2 → band-1.5to0.25)
+
+    Examples:
+      ce_only                               → _ce_only
+      ce_plus_R_R10.0_smooth               → _ce_plus_R_R10.0_smooth_band-1.0to0.0
+      ce_plus_R_R10.0_smooth_band-1.5to0.2 → _ce_plus_R_R10.0_smooth_band-1.5to0.25
+    """
+    import re
+    lt = loss_type or 'ce_only'
+    m = re.match(r'(ce_plus_R_R[\d.]+_smooth)(_band.+)?$', lt)
+    if m:
+        base = m.group(1)
+        band = m.group(2) or '_band-1.0to0.0'        # add default band if missing
+        band = band.replace('band-1.5to0.2', 'band-1.5to0.25')  # fix truncation
+        return '_' + base + band
+    return '_' + lt
+
+
 def entropy_from_probs(probs, eps=1e-10):
     """Compute entropy from probability distributions."""
     probs = np.clip(probs, eps, 1.0)
@@ -155,7 +178,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val', loss_type
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}{_lt(loss_type)}_{split}_entropy_vs_prob.png'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}{_fig_lt(loss_type)}_{split}_entropy_vs_prob.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
@@ -441,7 +464,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     # Always use 'seed_all' for any multi-seed aggregated plot
-    stem = f'{dataset}_{model}_k{K}_seed_all{_lt(loss_type)}_{split}'
+    stem = f'{dataset}_{model}_k{K}_seed_all{_fig_lt(loss_type)}_{split}'
 
     output_path = figures_dir / f'{stem}_entropy_vs_prob_with_trajectories.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -700,7 +723,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', sp
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
     figures_dir.mkdir(parents=True, exist_ok=True)
     
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}{_lt(loss_type)}_{split}_entropy_vs_correctness.png'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed{seed}{_fig_lt(loss_type)}_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
@@ -850,7 +873,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     # Always use 'seed_all' for any multi-seed aggregated plot
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all{_lt(loss_type)}_{split}_entropy_vs_correctness.png'
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all{_fig_lt(loss_type)}_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
