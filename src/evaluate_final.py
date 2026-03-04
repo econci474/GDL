@@ -118,14 +118,16 @@ def build_loss_dir(loss_type: str, config: dict) -> str:
     if loss_type in DECORATED_LOSS_TYPES:
         parts = []
         parts.append(f"R{config.get('lambda_R', 1.0):.1f}")
-        parts.append(config.get('R_mode', 'hard'))
+        parts.append(config.get('R_mode', 'smooth'))  # training default is smooth
         if config.get('entropy_floor') is not None:
             parts.append(f"floor{config.get('entropy_floor'):.2f}")
         if config.get('per_class_R', False):
             parts.append("perclass")
         band_lower = config.get('band_lower', -1.0)
         band_upper = config.get('band_upper', 0.0)
-        parts.append(f"band{band_lower:g}to{band_upper:g}")
+        # Only append band suffix when non-default (matches train_gnn_entropy.py)
+        if band_lower != -1.0 or band_upper != 0.0:
+            parts.append(f"band{band_lower:.1f}to{band_upper:.1f}")
         return f"{loss_type}_{'_'.join(parts)}"
     return loss_type
 

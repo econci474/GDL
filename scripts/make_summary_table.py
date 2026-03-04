@@ -20,6 +20,8 @@ parser.add_argument("--out-dir", type=str, default=None,
                     help="Directory for output PNG (default: same as results-dir)")
 parser.add_argument("--per-layer", action="store_true", default=False,
                     help="Load per-layer results (final_results_{MODEL}_per_layer.csv)")
+parser.add_argument("--r-only", action="store_true", default=False,
+                    help="Generate R_only table (2 band configs, K>=2) instead of CE vs CE+R")
 args = parser.parse_args()
 
 MODEL = args.model
@@ -27,7 +29,12 @@ RESULTS_DIR = Path(args.results_dir) if args.results_dir else Path("results/comp
 OUT_DIR = Path(args.out_dir) if args.out_dir else RESULTS_DIR
 
 # -- Config ----------------------------------------------------------------
-if args.per_layer:
+if args.r_only:
+    CSV_MAIN   = None
+    CSV_BAND10 = RESULTS_DIR / f"final_results_R_only_{MODEL}_band-1.0to0.0.csv"
+    CSV_BAND15 = RESULTS_DIR / f"final_results_R_only_{MODEL}_band-1.5to0.25.csv"
+    OUT_PATH   = OUT_DIR / f"test_acc_summary_table_R_only_{MODEL}.png"
+elif args.per_layer:
     CSV_MAIN   = RESULTS_DIR / f"final_results_{MODEL}_per_layer.csv"
     CSV_BAND10 = RESULTS_DIR / f"final_results_{MODEL}_band-1.0to0.0_per_layer.csv"
     CSV_BAND15 = RESULTS_DIR / f"final_results_{MODEL}_band-1.5to0.25_per_layer.csv"
@@ -39,46 +46,59 @@ else:
     OUT_PATH   = OUT_DIR / f"test_acc_summary_table_{MODEL}.png"
 
 DATASETS = ["Cora", "PubMed", "Roman-empire", "Squirrel"]
-K_VALUES = list(range(1, 9))
+K_VALUES = list(range(2, 9)) if args.r_only else list(range(1, 9))
 
-# Three configs per dataset
-CONFIGS = [
-    ("ce_only",    None,   None,  "CE only"),
-    ("ce_plus_R",  -1.0,   0.0,   "CE+R\n(-1, 0)"),
-    ("ce_plus_R",  -1.5,   0.25,  "CE+R\n(-1.5, 0.25)"),
-]
+# Configs per dataset
+if args.r_only:
+    CONFIGS = [
+        ("R_only", -1.0,  0.0,  "R only\n(-1, 0)"),
+        ("R_only", -1.5,  0.25, "R only\n(-1.5, 0.25)"),
+    ]
+else:
+    CONFIGS = [
+        ("ce_only",   None,  None,  "CE only"),
+        ("ce_plus_R", -1.0,  0.0,   "CE+R\n(-1, 0)"),
+        ("ce_plus_R", -1.5,  0.25,  "CE+R\n(-1.5, 0.25)"),
+    ]
 
 # -- Load & aggregate ------------------------------------------------------
 def load_and_agg(path):
     df = pd.read_csv(path)
     df["test_acc_pct"] = df["test_acc"] * 100
+    grp_cols = ["dataset", "loss_type", "K"]
+    if "band_lower" in df.columns:
+        grp_cols += ["band_lower", "band_upper"]
     agg = (
-        df.groupby(["dataset", "loss_type", "K", "band_lower", "band_upper"])["test_acc_pct"]
+        df.groupby(grp_cols)["test_acc_pct"]
         .agg(["mean", "std"])
         .reset_index()
     )
+    if "band_lower" not in agg.columns:
+        agg["band_lower"] = None
+        agg["band_upper"] = None
     agg["cell"] = agg.apply(lambda r: f"{r['mean']:.1f} \u00b1 {r['std']:.1f}", axis=1)
     return agg
 
-agg_main   = load_and_agg(CSV_MAIN)
-agg_band10 = load_and_agg(CSV_BAND10) if CSV_BAND10.exists() else None
-agg_band15 = load_and_agg(CSV_BAND15) if CSV_BAND15.exists() else None
+agg_main   = load_and_agg(CSV_MAIN) if CSV_MAIN and CSV_MAIN.exists() else None
+agg_band10 = load_and_agg(CSV_BAND10) if CSV_BAND10 and CSV_BAND10.exists() else None
+agg_band15 = load_and_agg(CSV_BAND15) if CSV_BAND15 and CSV_BAND15.exists() else None
 
 def lookup(ds, loss_type, band_lower, band_upper, K):
     """Return formatted cell string, or '-' if not found."""
     if loss_type == "ce_only":
+        if agg_main is None: return "-"
         src = agg_main
         mask = (src.dataset == ds) & (src.loss_type == "ce_only") & (src.K == K)
     elif band_lower == -1.0 and band_upper == 0.0:
         if agg_band10 is None:
             return "-"
         src = agg_band10
-        mask = (src.dataset == ds) & (src.loss_type == "ce_plus_R") & (src.K == K)
-    else:  # band (-1.5, 0.25) -- use dedicated band-1.5to0.25 results
+        mask = (src.dataset == ds) & (src.loss_type == loss_type) & (src.K == K)
+    else:  # band (-1.5, 0.25)
         if agg_band15 is None:
             return "-"
         src = agg_band15
-        mask = (src.dataset == ds) & (src.loss_type == "ce_plus_R") & (src.K == K)
+        mask = (src.dataset == ds) & (src.loss_type == loss_type) & (src.K == K)
     hits = src[mask]
     return hits["cell"].values[0] if len(hits) else "-"
 
@@ -167,9 +187,10 @@ for i, (k_label, row_cells) in enumerate(zip(row_labels, table_data)):
                 fontsize=8.5)
 
 # -- Title -----------------------------------------------------------------
-HETERO_DATASETS = ["Roman-empire", "Squirrel"]  # datasets averaged over seeds x splits
 hetero_note = "hetero: 3 seeds x split 0, homo: 3 seeds"
-if args.per_layer:
+if args.r_only:
+    title_suffix = f"R only, per-layer hyperparams, {hetero_note}"
+elif args.per_layer:
     title_suffix = f"per-layer hyperparams, {hetero_note}"
 else:
     title_suffix = f"mean +/- std, seeds 0-2"
