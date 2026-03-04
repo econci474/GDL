@@ -193,11 +193,9 @@ def plot_all(all_dataset_results, datasets, model, K, seeds_used,
     ds_tag  = "_".join(d.replace("-", "") for d in datasets)
     std_tag = "" if show_std else "_no_std"
     fname   = f"{ds_tag}_{model}_K{K}_curvature_violations{suffix}{std_tag}.png"
-    # Save into the first dataset's per-model/K directory (mirrors other figures)
-    primary_ds = datasets[0]
-    per_ds_dir = output_dir / primary_ds / model / f"K_{K}"
-    per_ds_dir.mkdir(parents=True, exist_ok=True)
-    out = per_ds_dir / fname
+    # Save directly under figures/ — it's a cross-dataset summary figure
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = output_dir / fname
     plt.savefig(out, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved -> {out}")
