@@ -197,16 +197,22 @@ def main():
     parser.add_argument('--seed', type=str, default='0',
                        help='Random seed or "all" to run all seeds from config')
     parser.add_argument('--loss-type', type=str, default='exponential',
-                        help='Loss type directory name (e.g., exponential, class-weighted, ce_plus_R_R1.0_hard, ce_plus_R_R1.0_smooth)')
+                        help='Loss type directory name (e.g., ce_only, ce_plus_R_R1.0_smooth_band-1.0to0.0)')
+    parser.add_argument('--classifier-heads-dir', type=str, default=None,
+                        help='Override cfg.classifier_heads_dir (e.g. /content/drive/MyDrive/GDL/.../classifier_heads)')
+    parser.add_argument('--split-id', type=int, default=None,
+                        help='Split index for heterophilous datasets (default: auto-detected)')
     parser.add_argument('--root-dir', type=str, default='data',
                         help='Root directory for datasets')
-    parser.add_argument('--normalize-planetoid', action='store_true',
-                        help='Apply normalization for Planetoid datasets')
+    parser.add_argument('--normalize-planetoid', action='store_true')
     parser.add_argument('--planetoid-split', type=str, default='public',
-                        choices=['public', 'full', 'random'],
-                        help='Which split to use for Planetoid datasets')
-    
+                        choices=['public', 'full', 'random'])
+
     args = parser.parse_args()
+
+    # Override classifier_heads_dir if provided on CLI
+    if args.classifier_heads_dir:
+        cfg.classifier_heads_dir = args.classifier_heads_dir
     
     # Convert config module to dict
     config = {k: v for k, v in vars(cfg).items() if not k.startswith('_')}
@@ -225,25 +231,19 @@ def main():
     for seed in seeds_to_run:
         # Check if dataset uses splits
         if args.dataset in HETEROPHILOUS_DATASETS:
-            # Process all 10 splits for heterophilous datasets
-            for split_id in range(10):
+            # Determine which splits to probe
+            if args.split_id is not None and args.split_id >= 0:
+                splits_to_probe = [args.split_id]
+            else:
+                splits_to_probe = list(range(10))
+            for split_id in splits_to_probe:
                 extract_classifier_outputs(
-                    args.dataset,
-                    args.model,
-                    args.K,
-                    seed,
-                    config,
-                    loss_type=args.loss_type,
-                    split_id=split_id
+                    args.dataset, args.model, args.K, seed, config,
+                    loss_type=args.loss_type, split_id=split_id
                 )
         else:
-            # Single extraction for homophilous datasets
             extract_classifier_outputs(
-                args.dataset,
-                args.model,
-                args.K,
-                seed,
-                config,
+                args.dataset, args.model, args.K, seed, config,
                 loss_type=args.loss_type
             )
         print()  # Add spacing between seeds

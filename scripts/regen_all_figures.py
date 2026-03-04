@@ -150,6 +150,8 @@ for model in args.models:
                            "--loss-type", loss_dir]
                     if is_hetero:
                         cmd += ["--split-id", str(split_id)]
+                    if args.classifier_heads_dir:
+                        cmd += ["--classifier-heads-dir", args.classifier_heads_dir]
                     run(cmd, f"EXTRACT  {label}  seed={seed}")
 
             if args.extract_only:
