@@ -64,7 +64,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
     
     # Create figure with subplots
     num_depths = len(k_list)
-    ncols = max(3, min(3, num_depths))  # always at least 3 columns
+    ncols = min(3, num_depths)
     nrows = int(np.ceil(num_depths / ncols))
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
@@ -222,7 +222,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         class_mean_p_correct[k] = class_P
     
     num_depths = len(k_list)
-    ncols = max(3, min(3, num_depths))  # always at least 3 columns
+    ncols = min(3, num_depths)
     nrows_scatter = int(np.ceil(num_depths / ncols))
     nrows = nrows_scatter + 1  # +1 for trajectory panel
     height_ratios = [1] * nrows_scatter + [2]  # trajectory row is 2x taller
@@ -280,7 +280,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     
     # --- Per-class trajectory panels -----------------------------------------
     # Layout: num_classes panels arranged in (traj_rows x ncols) below scatter
-    traj_ncols    = ncols
+    traj_ncols    = max(3, ncols)  # classes figure: always at least 3 columns
     traj_nrows    = int(np.ceil(num_classes / traj_ncols))
     nrows_scatter = int(np.ceil(num_depths / ncols))
     nrows         = nrows_scatter + traj_nrows
@@ -536,13 +536,13 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         cbar_c.set_label('Depth k', fontsize=11)
         cbar_c.set_ticks(k_list)
 
-    top_c = 0.82 + 0.05 * (traj_nrows - 1)   # 0.82 for 1 row, 0.87 for 2, 0.92 for 3+
+    top_c = 0.76 + 0.05 * (traj_nrows - 1)   # leave room for 2-line suptitle
     fig_c.subplots_adjust(top=top_c, bottom=0.08, left=0.07, right=0.96,
                           hspace=0.3, wspace=0.2)
     fig_c.suptitle(
         f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
         f'Per-Node Mean Entropy vs Mean Correct-Class Probability, by Class',
-        fontsize=13, fontweight='bold'
+        fontsize=13, fontweight='bold', y=top_c + 0.05
     )
     classes_path = figures_dir / f'{stem}_classes.png'
     fig_c.savefig(classes_path, dpi=150, bbox_inches='tight')
@@ -594,7 +594,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', sp
     
     # Create figure with subplots
     num_depths = len(k_list)
-    ncols = max(3, min(3, num_depths))  # always at least 3 columns
+    ncols = min(3, num_depths)
     nrows = int(np.ceil(num_depths / ncols))
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
@@ -744,7 +744,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     
     # Create figure with subplots
     num_depths = len(k_list)
-    ncols = max(3, min(3, num_depths))  # always at least 3 columns
+    ncols = min(3, num_depths)
     nrows = int(np.ceil(num_depths / ncols))
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
@@ -926,8 +926,8 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
         class_mean_p_correct[k] = class_P
 
     num_depths    = len(k_list)
-    ncols         = max(3, min(3, num_depths))  # always at least 3 columns
-    traj_ncols    = ncols
+    ncols         = min(3, num_depths)
+    traj_ncols    = max(3, ncols)  # classes figure: always at least 3 columns
     traj_nrows    = int(np.ceil(num_classes / traj_ncols))
     nrows_scatter = int(np.ceil(num_depths / ncols))
     nrows         = nrows_scatter + traj_nrows
