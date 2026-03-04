@@ -16,7 +16,7 @@ from src.models import GCNNet, GATNet, GraphSAGENet
 from src.utils import set_seed, to_device, get_device
 
 # Datasets that use split-based training (10 splits per configuration)
-HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire']
+HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire', 'Squirrel']
 
 
 def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
