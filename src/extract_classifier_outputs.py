@@ -52,6 +52,56 @@ def build_model(model_name: str, data, num_classes: int, K: int, config: dict):
         raise ValueError(f"Unknown model: {model_name}. Use GCN, GAT, GraphSAGE.")
 
 
+def _resolve_ckpt(loss_dir, dataset_name, model_name, K, seed, split_id, heads_dir):
+    """Find best.pt by trying all plausible director names for a loss_dir string.
+
+    Handles the historical naming inconsistency where the default band
+    (-1.0, 0.0) may or may not appear as an explicit suffix:
+      ce_plus_R_R10.0_smooth          (no band suffix — primary)
+      ce_plus_R_R10.0_smooth_band-1.0to0.0   (explicit .1f)
+      ce_plus_R_R10.0_smooth_band-1.00to0.00 (explicit .2f)
+    """
+    import re
+    candidates = [loss_dir]  # exact string first (always a candidate)
+
+    m = re.match(
+        r'ce_plus_R_R([\d.]+)_smooth(?:_band([-\d.]+)to([-\d.]+))?$', loss_dir
+    )
+    if m:
+        lr  = m.group(1)
+        bl  = float(m.group(2)) if m.group(2) else -1.0
+        bu  = float(m.group(3)) if m.group(3) else  0.0
+        base_no_band = f'ce_plus_R_R{lr}_smooth'
+        is_default   = (bl == -1.0 and bu == 0.0)
+        if is_default:
+            candidates = [
+                base_no_band,
+                f'{base_no_band}_band{bl:.1f}to{bu:.1f}',
+                f'{base_no_band}_band{bl:.2f}to{bu:.2f}',
+            ]
+        else:
+            candidates = [
+                f'{base_no_band}_band{bl:.1f}to{bu:.1f}',
+                f'{base_no_band}_band{bl:.2f}to{bu:.2f}',
+                base_no_band,
+            ]
+
+    heads = Path(heads_dir)
+    for cand in candidates:
+        base = heads / cand / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
+        if split_id is not None:
+            base = base / f'split_{split_id}'
+        ckpt = base / 'best.pt'
+        if ckpt.exists():
+            return ckpt
+
+    # Not found — return primary path so caller produces a useful error message
+    base = heads / candidates[0] / dataset_name / model_name / f'seed_{seed}' / f'K_{K}'
+    if split_id is not None:
+        base = base / f'split_{split_id}'
+    return base / 'best.pt'
+
+
 def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_type='exponential', split_id=None):
     """
     Extract layer-wise predictions from trained classifier head model.
@@ -77,14 +127,12 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     # Load dataset - heterophilous datasets automatically have 2D masks
     data, num_classes, dataset_kind = load_dataset(dataset_name)
 
-    # Load trained checkpoint — use multi-candidate resolution so that
-    # directories named with/without explicit band suffix are both found
-    # (e.g. ce_plus_R_R10.0_smooth  vs  ce_plus_R_R10.0_smooth_band-1.0to0.0).
-    from src.evaluate_final import resolve_checkpoint_path
-    checkpoint_path = resolve_checkpoint_path(
-        dataset_name, model_name, K, seed,
-        split_id if (dataset_name in HETEROPHILOUS_DATASETS) else None,
-        loss_type, config
+    # Load trained checkpoint — try multiple candidate directory names so that
+    # dirs saved with/without explicit band suffix are both found.
+    _eff_split = split_id if (dataset_name in HETEROPHILOUS_DATASETS) else None
+    checkpoint_path = _resolve_ckpt(
+        loss_type, dataset_name, model_name, K, seed, _eff_split,
+        cfg.classifier_heads_dir
     )
 
     if not checkpoint_path.exists():
