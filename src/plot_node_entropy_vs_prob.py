@@ -74,7 +74,11 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
     
     # Color map for classes
     colors = plt.cm.tab10(np.linspace(0, 1, num_classes))
-    
+
+    # Sort classes by ascending node count (matches other plot functions)
+    class_order = sorted(range(num_classes),
+                         key=lambda c: int((plot_labels == c).sum()))
+
     # Plot each depth
     for idx, k in enumerate(k_list):
         ax = axes[idx]
@@ -95,8 +99,8 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
         assert len(probs) == plot_labels.shape[0], f"Shape mismatch: probs {len(probs)} vs labels {plot_labels.shape[0]}"
         p_correct = probs[np.arange(len(probs)), plot_labels]
         
-        # Scatter plot, one class at a time for legend
-        for c in range(num_classes):
+        # Scatter plot, one class at a time for legend (ascending count order)
+        for c in class_order:
             class_mask = plot_labels == c
             if class_mask.sum() > 0:
                 # Add count to label only for k=0
@@ -106,7 +110,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val'):
                     label = f'Class {c}'
                 
                 ax.scatter(H[class_mask], p_correct[class_mask],
-                          c=[colors[c]], label=label, 
+                          c=[colors[c]], label=label,
                           alpha=0.6, s=20, edgecolors='none')
         
         ax.set_xlabel('Predictive Entropy')
@@ -410,12 +414,10 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
     # Save combined figure                                                 #
     # ------------------------------------------------------------------ #
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
-    if seed_mode == 'custom':
-        figures_dir = figures_dir / 'not_seed_2'
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    seed_str = '_'.join(map(str, seeds)) if seed_mode == 'custom' else 'all'
-    stem = f'{dataset}_{model}_k{K}_seed_{seed_str}_{split}'
+    # Always use 'seed_all' for any multi-seed aggregated plot
+    stem = f'{dataset}_{model}_k{K}_seed_all_{split}'
 
     output_path = figures_dir / f'{stem}_entropy_vs_prob_with_trajectories.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -816,13 +818,10 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     
     # Save figure
     figures_dir = Path(config['figures_dir']) / dataset / model / f'K_{K}'
-    if seed_mode == 'custom':
-        # Create not_seed_2 subfolder for custom seed lists
-        figures_dir = figures_dir / 'not_seed_2'
     figures_dir.mkdir(parents=True, exist_ok=True)
-    
-    seed_str = '_'.join(map(str, seeds)) if seed_mode == 'custom' else 'all'
-    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_{seed_str}_{split}_entropy_vs_correctness.png'
+
+    # Always use 'seed_all' for any multi-seed aggregated plot
+    output_path = figures_dir / f'{dataset}_{model}_k{K}_seed_all_{split}_entropy_vs_correctness.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {output_path}")
     plt.close()
