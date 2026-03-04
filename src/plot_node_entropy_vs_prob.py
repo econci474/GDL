@@ -28,6 +28,15 @@ def _lt(loss_type: str) -> str:
     return '_' + (loss_type or 'ce_only')
 
 
+def _pretty_lt(loss_type: str) -> str:
+    """Return a human-readable label for a loss_type (for plot titles)."""
+    lt = loss_type or 'ce_only'
+    lt = lt.replace('ce_plus_R_', '').replace('ce_only', 'CE only')
+    lt = lt.replace('_smooth_', ' ').replace('_smooth', ' band-1.0to0.0')
+    lt = lt.replace('band-1.5to0.2', 'band-1.5to0.25').replace('_', ' ')
+    return lt
+
+
 def entropy_from_probs(probs, eps=1e-10):
     """Compute entropy from probability distributions."""
     probs = np.clip(probs, eps, 1.0)
@@ -137,7 +146,7 @@ def plot_entropy_vs_prob(dataset, model, K, seed, config, split='val', loss_type
     for idx in range(num_depths, len(axes)):
         axes[idx].axis('off')
     
-    plt.suptitle(f'{dataset}/{model} (K={K}, seed={seed}, {split} set):\n'
+    plt.suptitle(f'{dataset}/{model} (K={K}, seed={seed}, {split} set)  [{_pretty_lt(loss_type)}]:\n'
                  f'Per-Node Entropy vs Correct-Class Probability',
                  fontsize=14, y=1.00)
     plt.tight_layout()
@@ -406,7 +415,7 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
 
     seeds_str = ', '.join(map(str, seeds))
     fig.suptitle(
-        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set\n'
+        f'{model}/{dataset}, K={K}, seeds=[{seeds_str}], {split} set  [{_pretty_lt(loss_type)}]\n'
         f'Per-Node Mean Entropy vs Mean Correct-Class Probability',
         fontsize=14, fontweight='bold', y=0.985
     )
@@ -682,7 +691,7 @@ def plot_entropy_vs_correctness(dataset, model, K, seed, config, split='val', sp
     for idx in range(num_depths, len(axes)):
         axes[idx].axis('off')
     
-    plt.suptitle(f'{dataset}/{model} (K={K}, seed={seed}, {split} set):\n'
+    plt.suptitle(f'{dataset}/{model} (K={K}, seed={seed}, {split} set)  [{_pretty_lt(loss_type)}]:\n'
                  f'Per-Node Entropy vs Prediction Correctness',
                  fontsize=14, y=1.00)
     plt.tight_layout()
@@ -831,7 +840,7 @@ def plot_entropy_vs_correctness_aggregated(dataset, model, K, seeds, config, spl
     for idx in range(num_depths, len(axes)):
         axes[idx].axis('off')
     
-    plt.suptitle(f'{dataset}/{model} (K={K}, seeds={seeds}, {split} set):\n'
+    plt.suptitle(f'{dataset}/{model} (K={K}, seeds={seeds}, {split} set)  [{_pretty_lt(loss_type)}]:\n'
                  f'Per-Node Mean Entropy vs Prediction Correctness',
                  fontsize=14, y=1.00)
     plt.tight_layout()
