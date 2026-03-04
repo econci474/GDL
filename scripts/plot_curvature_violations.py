@@ -36,8 +36,11 @@ def _pretty(loss_type):
     label = loss_type.replace("ce_plus_R_", "").replace("ce_only", "CE only")
     for old, new in BAND_LABEL_FIXES.items():
         label = label.replace(old, new)
-    # Shorten for legend
-    label = label.replace("_smooth_", " ").replace("_", " ")
+    # _smooth_ in the middle means a band suffix follows — just strip it
+    label = label.replace("_smooth_", " ")
+    # _smooth at the end (no band suffix) means default band (-1.0, 0.0) — label it explicitly
+    label = label.replace("_smooth", " band-1.0to0.0")
+    label = label.replace("_", " ")
     return label
 
 
