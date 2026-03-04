@@ -192,7 +192,12 @@ def plot_all(all_dataset_results, datasets, model, K, seeds_used,
 
     ds_tag  = "_".join(d.replace("-", "") for d in datasets)
     std_tag = "" if show_std else "_no_std"
-    out = output_dir / f"{ds_tag}_{model}_K{K}_curvature_violations{suffix}{std_tag}.png"
+    fname   = f"{ds_tag}_{model}_K{K}_curvature_violations{suffix}{std_tag}.png"
+    # Save into the first dataset's per-model/K directory (mirrors other figures)
+    primary_ds = datasets[0]
+    per_ds_dir = output_dir / primary_ds / model / f"K_{K}"
+    per_ds_dir.mkdir(parents=True, exist_ok=True)
+    out = per_ds_dir / fname
     plt.savefig(out, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved -> {out}")
@@ -215,6 +220,10 @@ def main():
                         help="Extra suffix appended to output filename before _no_std")
     args = parser.parse_args()
 
+    if args.K < 3:
+        print(f"[curvature] K={args.K} < 3 — need ≥3 layers for δ²H. Nothing to plot.")
+        return
+
     if args.classifier_heads_dir:
         cfg.classifier_heads_dir = args.classifier_heads_dir
 
@@ -224,7 +233,6 @@ def main():
     loss_types = [lt.strip() for lt in args.loss_types.split(",")]
 
     output_dir = Path(cfg.figures_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     all_dataset_results = {}
     for dataset in datasets:

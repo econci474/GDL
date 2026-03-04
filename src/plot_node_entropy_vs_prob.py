@@ -279,23 +279,25 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
             ax.legend(loc='best', fontsize=8, framealpha=0.9)
     
     # --- Per-class trajectory panels -----------------------------------------
-    # Layout: num_classes panels arranged in (traj_rows x ncols) below scatter
-    traj_ncols    = max(3, ncols)  # classes figure: always at least 3 columns
+    # Layout: num_classes panels arranged in (traj_rows x traj_ncols) below scatter
+    # The whole combined figure uses traj_ncols columns so scatter and trajectory
+    # panels share the same grid — avoids the IndexError when traj_ncols > ncols.
+    traj_ncols    = max(3, ncols)  # always at least 3 columns
     traj_nrows    = int(np.ceil(num_classes / traj_ncols))
-    nrows_scatter = int(np.ceil(num_depths / ncols))
+    nrows_scatter = int(np.ceil(num_depths / traj_ncols))  # use traj_ncols here too
     nrows         = nrows_scatter + traj_nrows
     height_ratios = [1] * nrows_scatter + [1.1] * traj_nrows
 
-    # Rebuild figure with updated layout
+    # Rebuild figure with updated layout (traj_ncols columns throughout)
     plt.close(fig)
-    fig = plt.figure(figsize=(5 * ncols, 4.5 * nrows))
-    gs  = fig.add_gridspec(nrows, ncols, hspace=0.35, wspace=0.2,
+    fig = plt.figure(figsize=(5 * traj_ncols, 4.5 * nrows))
+    gs  = fig.add_gridspec(nrows, traj_ncols, hspace=0.35, wspace=0.2,
                            height_ratios=height_ratios)
 
     # Re-draw the per-depth scatter panels
     for idx, k in enumerate(k_list):
-        row = idx // ncols
-        col = idx % ncols
+        row = idx // traj_ncols
+        col = idx % traj_ncols
         ax  = fig.add_subplot(gs[row, col])
         if k not in all_probs or len(all_probs[k]) == 0:
             continue
@@ -315,6 +317,10 @@ def plot_entropy_vs_prob_aggregated(dataset, model, K, seeds, config, split='val
         ax.set_xlim(left=0); ax.set_ylim(0, 1)
         if idx == 0:
             ax.legend(loc='best', fontsize=8, framealpha=0.9)
+
+    # Hide unused scatter slots (when num_depths < traj_ncols)
+    for slot in range(num_depths, nrows_scatter * traj_ncols):
+        fig.add_subplot(gs[slot // traj_ncols, slot % traj_ncols]).axis('off')
 
     # Depth colormap (k=0 → blue, k=K → red)
     depth_cmap = plt.cm.coolwarm
@@ -927,9 +933,9 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
 
     num_depths    = len(k_list)
     ncols         = min(3, num_depths)
-    traj_ncols    = max(3, ncols)  # classes figure: always at least 3 columns
+    traj_ncols    = max(3, ncols)  # always at least 3 columns
     traj_nrows    = int(np.ceil(num_classes / traj_ncols))
-    nrows_scatter = int(np.ceil(num_depths / ncols))
+    nrows_scatter = int(np.ceil(num_depths / traj_ncols))  # use traj_ncols to match gridspec
     nrows         = nrows_scatter + traj_nrows
     height_ratios = [1] * nrows_scatter + [1.1] * traj_nrows
 
@@ -938,13 +944,13 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
     K_max_val  = max(k_list)
     depth_norm = plt.Normalize(vmin=0, vmax=K_max_val)
 
-    fig = plt.figure(figsize=(5 * ncols, 4.5 * nrows))
-    gs  = fig.add_gridspec(nrows, ncols, hspace=0.35, wspace=0.2,
+    fig = plt.figure(figsize=(5 * traj_ncols, 4.5 * nrows))
+    gs  = fig.add_gridspec(nrows, traj_ncols, hspace=0.35, wspace=0.2,
                            height_ratios=height_ratios)
 
     # ── Scatter panels (one per depth) ───────────────────────────────── #
     for idx, k in enumerate(k_list):
-        ax = fig.add_subplot(gs[idx // ncols, idx % ncols])
+        ax = fig.add_subplot(gs[idx // traj_ncols, idx % traj_ncols])
         if k not in pooled_probs:
             continue
         H         = entropy_from_probs(pooled_probs[k])
@@ -963,6 +969,10 @@ def plot_entropy_vs_prob_allsplits(dataset, model, K, seeds, config,
         ax.set_xlim(left=0); ax.set_ylim(0, 1)
         if idx == 0:
             ax.legend(loc='best', fontsize=6, framealpha=0.9, ncol=2)
+
+    # Hide unused scatter slots (when num_depths < traj_ncols)
+    for slot in range(num_depths, nrows_scatter * traj_ncols):
+        fig.add_subplot(gs[slot // traj_ncols, slot % traj_ncols]).axis('off')
 
     # ── Trajectory panels (one per class) ────────────────────────────── #
     class_sizes = sorted(range(num_classes), key=lambda c: int((pooled_labels[k_list[0]] == c).sum())

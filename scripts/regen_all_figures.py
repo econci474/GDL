@@ -202,22 +202,25 @@ for model in args.models:
 
 # ── Phase 4: Curvature violations (once per model, all datasets) ──────────────
 if not args.sep_only and not args.entropy_only and not args.extract_only:
-    datasets_str = ",".join(args.datasets)
-    for model in args.models:
-        loss_types_str = ",".join(sorted(curvature_loss_dirs_by_model[model]))
-        if not loss_types_str:
-            continue
-        # Use the largest K available for the curvature plot
-        max_K = max(args.k_values)
-        cmd = [py, "scripts/plot_curvature_violations.py",
-               "--datasets", datasets_str,
-               "--model", model,
-               "--K", str(max_K),
-               "--seed", ",".join(str(s) for s in args.seeds),
-               "--loss-types", loss_types_str]
-        if args.classifier_heads_dir:
-            cmd += ["--classifier-heads-dir", args.classifier_heads_dir]
-        run(cmd, f"CURVATURE  {model}  K={max_K}  all datasets")
+    max_K = max(args.k_values)
+    if max_K < 3:
+        print(f"\n[Phase 4] Skipping curvature plots — K={max_K} < 3 (need ≥3 layers for δ²H)")
+    else:
+        datasets_str = ",".join(args.datasets)
+        for model in args.models:
+            loss_types_str = ",".join(sorted(curvature_loss_dirs_by_model[model]))
+            if not loss_types_str:
+                continue
+            # Use the largest K available for the curvature plot
+            cmd = [py, "scripts/plot_curvature_violations.py",
+                   "--datasets", datasets_str,
+                   "--model", model,
+                   "--K", str(max_K),
+                   "--seed", ",".join(str(s) for s in args.seeds),
+                   "--loss-types", loss_types_str]
+            if args.classifier_heads_dir:
+                cmd += ["--classifier-heads-dir", args.classifier_heads_dir]
+            run(cmd, f"CURVATURE  {model}  K={max_K}  all datasets")
 
 total_min = (time.time() - total_start) / 60
 print(f"\n{'='*60}")
