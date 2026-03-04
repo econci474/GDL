@@ -107,49 +107,91 @@ def evaluate_test_set(model, data, device, use_classifier_head=False):
     return float(test_loss), float(test_acc.item())
 
 
-def build_loss_dir(loss_type: str, config: dict) -> str:
-    """Mirror the loss_dir naming used by train_gnn_entropy.py.
+def _build_loss_dir_candidates(loss_type: str, config: dict) -> list:
+    """Generate all plausible directory name variants for a given loss/config.
 
-    Regulariser loss types ('ce_plus_R', 'weighted_ce_plus_R', 'R_only') get a
-    decorated name encoding key hyperparameters (e.g. 'ce_plus_R_R1.0_smooth_band-1.0to0.0').
-    Plain CE types ('ce_only', 'weighted_ce') use the bare loss_type string.
+    Returns a list of candidate names, most-preferred first.  This handles
+    historical inconsistencies where the training script's default band or
+    float format changed across runs:
+      - band (-1.0, 0.0): sometimes saved with explicit suffix, sometimes no suffix
+      - band (-1.5, 0.25): sometimes saved as 0.25 (:.2f), sometimes as 0.2 (:.1f)
     """
     DECORATED_LOSS_TYPES = {"ce_plus_R", "weighted_ce_plus_R", "R_only"}
-    if loss_type in DECORATED_LOSS_TYPES:
+    if loss_type not in DECORATED_LOSS_TYPES:
+        return [loss_type or "ce_only"]
+
+    def _base_parts(config):
         parts = []
         parts.append(f"R{config.get('lambda_R', 1.0):.1f}")
-        parts.append(config.get('R_mode', 'smooth'))  # training default is smooth
+        parts.append(config.get('R_mode', 'smooth'))
         if config.get('entropy_floor') is not None:
             parts.append(f"floor{config.get('entropy_floor'):.2f}")
         if config.get('per_class_R', False):
             parts.append("perclass")
-        band_lower = config.get('band_lower', -1.0)
-        band_upper = config.get('band_upper', 0.0)
-        # Only append band suffix when non-default (matches train_gnn_entropy.py)
-        if band_lower != -1.0 or band_upper != 0.0:
-            parts.append(f"band{band_lower:.1f}to{band_upper:.1f}")
-        return f"{loss_type}_{'_'.join(parts)}"
-    return loss_type
+        return parts
+
+    base = _base_parts(config)
+    band_lower = config.get('band_lower', -1.0)
+    band_upper = config.get('band_upper', 0.0)
+
+    # Generate band suffix variants: both .1f and .2f precision
+    band_1f = f"band{band_lower:.1f}to{band_upper:.1f}"
+    band_2f = f"band{band_lower:.2f}to{band_upper:.2f}"
+    band_suffixes_with = list(dict.fromkeys([band_1f, band_2f]))  # deduped, ordered
+
+    candidates = []
+    is_default_band = (band_lower == -1.0 and band_upper == 0.0)
+
+    if is_default_band:
+        # Primary: no suffix (current convention); fallback: explicit suffix
+        candidates.append(f"{loss_type}_{'_'.join(base)}")
+        for sfx in band_suffixes_with:
+            candidates.append(f"{loss_type}_{'_'.join(base + [sfx])}")
+    else:
+        # Primary: with suffix (.1f); fallbacks: .2f, then no suffix
+        for sfx in band_suffixes_with:
+            candidates.append(f"{loss_type}_{'_'.join(base + [sfx])}")
+        candidates.append(f"{loss_type}_{'_'.join(base)}")
+
+    return candidates
+
+
+def build_loss_dir(loss_type: str, config: dict) -> str:
+    """Return the primary (most-likely) loss directory name for a given config.
+
+    Regulariser loss types ('ce_plus_R', 'weighted_ce_plus_R', 'R_only') get a
+    decorated name encoding key hyperparameters.
+    Plain CE types ('ce_only', 'weighted_ce') use the bare loss_type string.
+    """
+    return _build_loss_dir_candidates(loss_type, config)[0]
 
 
 def resolve_checkpoint_path(dataset, model_name, K, seed, split_id, loss_type, config):
-    """Resolve the path to best.pt given run parameters.
+    """Resolve the path to best.pt, trying multiple directory name variants.
 
-    The sweep always uses train_gnn_entropy.py, which saves all loss types
-    (including ce_only and weighted_ce) under cfg.classifier_heads_dir.
-    Regulariser types get a decorated subdirectory name via build_loss_dir().
+    Tries all plausible loss_dir names (accounting for historical format
+    differences in the band suffix) and returns the first that exists on disk.
+    If none exist, returns the primary (most-preferred) path so the caller
+    can emit a meaningful 'not found' message.
     """
-    loss_dir = build_loss_dir(loss_type or "ce_only", config)
-    base_dir = (
-        Path(cfg.classifier_heads_dir)
-        / loss_dir / dataset / model_name
-        / f"seed_{seed}" / f"K_{K}"
-    )
+    candidates = _build_loss_dir_candidates(loss_type or "ce_only", config)
+    primary_path = None
 
-    if split_id is not None and split_id >= 0:
-        base_dir = base_dir / f"split_{split_id}"
+    for i, loss_dir in enumerate(candidates):
+        base_dir = (
+            Path(cfg.classifier_heads_dir)
+            / loss_dir / dataset / model_name
+            / f"seed_{seed}" / f"K_{K}"
+        )
+        if split_id is not None and split_id >= 0:
+            base_dir = base_dir / f"split_{split_id}"
+        path = base_dir / "best.pt"
+        if i == 0:
+            primary_path = path  # saved for error messages
+        if path.exists():
+            return path
 
-    return base_dir / "best.pt"
+    return primary_path  # not found — caller will print skip message
 
 
 def append_final_result(row: dict) -> None:
