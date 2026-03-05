@@ -9,6 +9,7 @@ seaborn
 tqdm
 pyyaml
 scipy
+torchmetrics>=0.11.0
 
 # Optional for better performance
 networkx

@@ -1,15 +1,13 @@
-# GDL
-entropy to select optimal GNN depth
-# Entropy-Guided Depth Selection in GNNs
+# Entropy-Dynamics in GNNs
 
-Research codebase for investigating predictive entropy dynamics across message-passing depth in Graph Neural Networks.
+Research codebase for investigating predictive entropy dynamics across message-passing layers in Graph Neural Networks.
 
 ## Setup
 
 ### Installation
 
 ```bash
-# Create and activate the gdl environment (already set up)
+# Create and activate the gdl environment
 conda activate gdl
 
 # Install dependencies
@@ -20,7 +18,7 @@ pip install -r requirements.txt
 
 ```
 entropy-selection/
-├── config.yaml              # Hyperparameters
+├── config.py             # Hyperparameters
 ├── requirements.txt         # Dependencies
 ├── results/
 │   ├── tables/             # CSV outputs
@@ -74,7 +72,7 @@ python -m src.plots --dataset Cora --model GCN
 ## Datasets
 
 - **Homophilous**: Cora, PubMed
-- **Heterophilous**: Roman-empire, Minesweeper
+- **Heterophilous**: Roman-empire, Squirrel (filtered)
 
 All datasets use standard benchmark splits from PyTorch Geometric.
 
