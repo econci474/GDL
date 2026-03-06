@@ -251,7 +251,7 @@ def extract_classifier_outputs(dataset_name, model_name, K, seed, config, loss_t
     np.savez(pernode_path, **pernode_dict)
     print(f"  Per-node arrays saved to: {pernode_path}")
     
-    print(f"\n✓ Classifier outputs extracted!")
+    print(f"\n[OK] Classifier outputs extracted!")
     print(f"  Total layers: {len(layer_logits_cpu)} (k=0..{K})")
     for k in range(len(layer_logits_cpu)):
         print(f"  k={k}: logits shape {layer_logits_cpu[k].shape}, probs shape {layer_probs_cpu[k].shape}")

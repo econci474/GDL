@@ -27,7 +27,7 @@ def load_split_test_accuracies(dataset_name, model_name, K, seed, runs_dir, num_
         log_file = Path(runs_dir) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / f'split_{split_idx}' / 'train_log.csv'
         
         if not log_file.exists():
-            print(f"    ⚠ Warning: Missing log for split {split_idx}")
+            print(f"    [WARN] Warning: Missing log for split {split_idx}")
             continue
         
         df = pd.read_csv(log_file)
@@ -78,7 +78,7 @@ def aggregate_results(dataset_name, model_name, runs_dir, seeds, K_values, num_s
             )
             
             if len(test_accs) == 0:
-                print(f"  ⚠ No valid splits found for K={K}, seed={seed}")
+                print(f"  [WARN] No valid splits found for K={K}, seed={seed}")
                 continue
             
             results.append({
@@ -130,7 +130,7 @@ def main():
     )
     
     if df.empty:
-        print("⚠ No results found!")
+        print("[WARN] No results found!")
         return
     
     # Determine output path
@@ -146,7 +146,7 @@ def main():
     df.to_csv(output_file, index=False, float_format='%.6f')
     
     print(f"\n{'='*70}")
-    print(f"✓ Results saved to: {output_file}")
+    print(f"[OK] Results saved to: {output_file}")
     print(f"{'='*70}\n")
     
     # Print summary statistics

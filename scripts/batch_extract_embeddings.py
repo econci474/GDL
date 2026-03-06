@@ -79,13 +79,13 @@ def main():
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             if result.returncode == 0 and "SUCCESS" in result.stdout:
-                print("✓ Success")
+                print("[OK] Success")
                 success_count += 1
             else:
-                print(f"✗ Failed: {result.stderr[:200]}")
+                print(f"[FAIL] Failed: {result.stderr[:200]}")
                 fail_count += 1
         except Exception as e:
-            print(f"✗ Error: {e}")
+            print(f"[FAIL] Error: {e}")
             fail_count += 1
     
     print("\n" + "="*60)

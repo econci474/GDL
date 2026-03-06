@@ -92,7 +92,7 @@ def main():
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"\n✓ Scatter plot saved to: {output_path}")
+    print(f"\n[OK] Scatter plot saved to: {output_path}")
 
 
 if __name__ == '__main__':

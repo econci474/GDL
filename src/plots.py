@@ -42,7 +42,7 @@ def plot_accuracy_vs_depth(dataset_name, model_name, K, config, seeds=None):
         all_test_acc.append(df['test_acc'].values)
     
     if len(all_val_acc) == 0:
-        print(f"⚠ No data found for {dataset_name} {model_name}")
+        print(f"[WARN] No data found for {dataset_name} {model_name}")
         return
     
     depths = df['k'].values

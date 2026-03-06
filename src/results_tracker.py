@@ -15,7 +15,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as cfg
 
-SWEEP_RESULTS_PATH = Path(cfg.results_dir) / "sweep_results.csv"
+# Resolve relative to the project root (not the process CWD).
+# This ensures the path is always correct regardless of where the
+# training subprocess is launched from in Colab.
+_PROJECT_ROOT = Path(__file__).parent.parent
+SWEEP_RESULTS_PATH = (_PROJECT_ROOT / cfg.results_dir / "sweep_results.csv"
+                      if not Path(cfg.results_dir).is_absolute()
+                      else Path(cfg.results_dir) / "sweep_results.csv")
 
 COLUMNS = [
     "dataset", "model", "loss_type",

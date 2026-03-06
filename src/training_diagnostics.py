@@ -33,7 +33,7 @@ def plot_training_curves(dataset_name, model_name, K, config, seeds=None):
         log_file = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'train_log.csv'
         
         if not log_file.exists():
-            print(f"  ⚠ Training log not found for seed {seed}")
+            print(f"  [WARN] Training log not found for seed {seed}")
             continue
         
         df = pd.read_csv(log_file)
@@ -111,7 +111,7 @@ def plot_training_curves(dataset_name, model_name, K, config, seeds=None):
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"  [OK] Saved: {output_file}")
 
 
 def plot_accuracy_curves(dataset_name, model_name, K, config, seeds=None):
@@ -131,7 +131,7 @@ def plot_accuracy_curves(dataset_name, model_name, K, config, seeds=None):
         log_file = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'train_log.csv'
         
         if not log_file.exists():
-            print(f"  ⚠ Training log not found for seed {seed}")
+            print(f"  [WARN] Training log not found for seed {seed}")
             continue
         
         df = pd.read_csv(log_file)
@@ -207,7 +207,7 @@ def plot_accuracy_curves(dataset_name, model_name, K, config, seeds=None):
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"  [OK] Saved: {output_file}")
 
 
 def has_splits(dataset_name, model_name, K, seed, config):
@@ -235,7 +235,7 @@ def plot_per_split_diagnostics(dataset_name, model_name, K, config, seeds=None, 
             log_file = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / f'split_{split_idx}' / 'train_log.csv'
             
             if not log_file.exists():
-                print(f"  ⚠ Training log not found for seed {seed}, split {split_idx}")
+                print(f"  [WARN] Training log not found for seed {seed}, split {split_idx}")
                 continue
             
             df = pd.read_csv(log_file)
@@ -313,7 +313,7 @@ def plot_per_split_diagnostics(dataset_name, model_name, K, config, seeds=None, 
         fig.savefig(output_file, bbox_inches='tight', dpi=300)
         plt.close(fig)
         
-        print(f"  ✓ Saved: {output_file}")
+        print(f"  [OK] Saved: {output_file}")
 
 
 def plot_combined_diagnostics(dataset_name, model_name, K, config, seeds=None):
@@ -334,7 +334,7 @@ def plot_combined_diagnostics(dataset_name, model_name, K, config, seeds=None):
         log_file = Path(config['runs_dir']) / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'train_log.csv'
         
         if not log_file.exists():
-            print(f"  ⚠ Training log not found for seed {seed}")
+            print(f"  [WARN] Training log not found for seed {seed}")
             continue
         
         df = pd.read_csv(log_file)
@@ -430,7 +430,7 @@ def plot_combined_diagnostics(dataset_name, model_name, K, config, seeds=None):
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
     
-    print(f"  ✓ Saved: {output_file}")
+    print(f"  [OK] Saved: {output_file}")
 
 
 def main():
@@ -463,7 +463,7 @@ def main():
         plot_combined_diagnostics(args.dataset, args.model, args.K, config)
     
     print(f"\n{'='*60}")
-    print("✓ Training diagnostic plots complete!")
+    print("[OK] Training diagnostic plots complete!")
     print(f"{'='*60}\n")
 
 

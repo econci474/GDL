@@ -2,23 +2,24 @@
 Aggregate probe results across splits for heterophilous datasets.
 
 For datasets with multiple splits (Minesweeper, Roman-empire), this script:
-1. Loads all probe results for a given dataset/model/seed/K
+1. Loads all per-split probe CSVs for a given dataset/model/seed/K
 2. Averages metrics across the 10 splits
-3. Saves aggregated results in the standard format (without split suffix)
+3. Saves the aggregated CSV in the standard format (without split suffix)
 
-This allows the existing plotting pipeline to work with heterophilous datasets.
+Note: per-split NPZ files are kept as-is; they are NOT concatenated.
 """
 
-import pandas as pd
-import numpy as np
-from pathlib import Path
 import argparse
 import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as cfg
 
-HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire']
+HETEROPHILOUS_DATASETS = ['Minesweeper', 'Roman-empire', 'Squirrel']
 
 
 def aggregate_probe_results(dataset_name, model_name, K, seed, config):
@@ -37,12 +38,10 @@ def aggregate_probe_results(dataset_name, model_name, K, seed, config):
     tables_dir = Path(config['tables_dir'])
     arrays_dir = Path(config['results_dir']) / 'arrays'
     
-    # Collect all split results
+    # Collect all split probe CSVs
     split_dfs = []
-    split_arrays = []
     
     for split_id in range(10):
-        # Load CSV table
         csv_path = tables_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}_probe.csv'
         if not csv_path.exists():
             print(f"  Warning: Missing {csv_path.name}")
@@ -50,11 +49,6 @@ def aggregate_probe_results(dataset_name, model_name, K, seed, config):
         
         df = pd.read_csv(csv_path)
         split_dfs.append(df)
-        
-        # Load NPZ arrays
-        npz_path = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_split{split_id}_pernode.npz'
-        if npz_path.exists():
-            split_arrays.append(dict(np.load(npz_path)))
     
     if not split_dfs:
         print(f"  Error: No split results found!")
@@ -81,34 +75,9 @@ def aggregate_probe_results(dataset_name, model_name, K, seed, config):
     # Save aggregated CSV (without split suffix)
     output_csv = tables_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_probe.csv'
     agg_df.to_csv(output_csv, index=False)
-    print(f"  ✓ Saved: {output_csv.name}")
+    print(f"  [OK] Saved: {output_csv.name}")
     
-    #DELETE THIS PART. KEEP NPZ PER SPLIT. DO NOT CONCATENATE
-    # Aggregate NPZ arrays (concatenate across splits)
-    if split_arrays:
-        # For per-node data, we concatenate across splits (each split has different nodes)
-        # Keys like 'probs_0', 'probs_1', ..., 'labels', 'val_mask_0', etc.
-        aggregated_arrays = {}
-        
-        # Get all unique keys
-        all_keys = set()
-        for arr_dict in split_arrays:
-            all_keys.update(arr_dict.keys())
-        
-        for key in all_keys:
-            if key == 'k_list':
-                # k_list is the same across splits
-                aggregated_arrays[key] = split_arrays[0][key]
-            else:
-                # Concatenate arrays across splits
-                arrays = [arr_dict[key] for arr_dict in split_arrays if key in arr_dict]
-                if arrays:
-                    aggregated_arrays[key] = np.concatenate(arrays, axis=0)
-        
-        # Save aggregated NPZ (without split suffix)
-        output_npz = arrays_dir / f'{dataset_name}_{model_name}_K{K}_seed{seed}_pernode.npz'
-        np.savez(output_npz, **aggregated_arrays)
-        print(f"  ✓ Saved: {output_npz.name}")
+
 
 
 def main():

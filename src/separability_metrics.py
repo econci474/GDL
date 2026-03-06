@@ -421,7 +421,7 @@ def plot_separability_vs_depth(df, df_per_class, num_classes, summary, output_pa
             n_correct = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_correct'])
             n_wrong = int(df_per_class.loc[last_layer_idx, f'class_{c}_n_wrong'])
             
-            label = f'C{c} (n={n_total}: {n_correct}✓/{n_wrong}✗)'
+            label = f'C{c} (n={n_total}: {n_correct}[OK]/{n_wrong}[FAIL])'
             ax.plot(df_per_class['k'], df_per_class[entropy_col],
                    'o-', linewidth=1.5, markersize=5, label=label, color=colors[c])
     

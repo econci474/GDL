@@ -43,7 +43,7 @@ def plot_per_split_diagnostics(dataset_name, model_name, K, loss_type, config, s
             log_file = Path(config['classifier_heads_dir']) / loss_type / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / f'split_{split_idx}' / 'train_log.csv'
             
             if not log_file.exists():
-                print(f"  ⚠ Training log not found for seed {seed}, split {split_idx}")
+                print(f"  [WARN] Training log not found for seed {seed}, split {split_idx}")
                 continue
             
             df = pd.read_csv(log_file)
@@ -131,7 +131,7 @@ def plot_per_split_diagnostics(dataset_name, model_name, K, loss_type, config, s
         fig.savefig(output_file, bbox_inches='tight', dpi=300)
         plt.close(fig)
         
-        print(f"  ✓ Saved: {output_file}")
+        print(f"  [OK] Saved: {output_file}")
 
 
 def plot_classifier_head_diagnostics(dataset_name, model_name, K, loss_type, config, seeds=None):
@@ -162,7 +162,7 @@ def plot_classifier_head_diagnostics(dataset_name, model_name, K, loss_type, con
         log_file = Path(cfg.classifier_heads_dir) / loss_type / dataset_name / model_name / f'seed_{seed}' / f'K_{K}' / 'train_log.csv'
         
         if not log_file.exists():
-            print(f"  ⚠ Training log not found for seed {seed}: {log_file}")
+            print(f"  [WARN] Training log not found for seed {seed}: {log_file}")
             continue
         
         df = pd.read_csv(log_file)
@@ -252,7 +252,7 @@ def plot_classifier_head_diagnostics(dataset_name, model_name, K, loss_type, con
     output_file = output_dir / f'{dataset_name}_{model_name}_k{K}_training_diagnostics.png'
     fig.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close(fig)
-    print(f"  ✓ Saved: {output_file}")
+    print(f"  [OK] Saved: {output_file}")
 
 
 def main():
@@ -301,7 +301,7 @@ def main():
                 plot_classifier_head_diagnostics(args.dataset, args.model, K, loss_type, config)
     
     print(f"\n{'='*60}")
-    print("✓ Training diagnostic plots complete!")
+    print("[OK] Training diagnostic plots complete!")
     print(f"{'='*60}\n")
 
 

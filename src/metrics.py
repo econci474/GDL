@@ -153,4 +153,4 @@ if __name__ == '__main__':
     nll = compute_nll(probs, labels)
     print(f"NLL: {nll:.4f}")
     
-    print("✓ Metrics tests passed")
+    print("[OK] Metrics tests passed")

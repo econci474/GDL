@@ -369,7 +369,7 @@ def plot_separability_vs_k(df, df_per_class, num_classes, dataset, model, K,
                 n        = n_by_c.get(c, 0)
                 n_ok     = n_correct_c.get(c, 0)
                 n_bad    = n_wrong_c.get(c, 0)
-                lbl = f'C{c} (n={n}: {n_ok}✓/{n_bad}✗)'
+                lbl = f'C{c} (n={n}: {n_ok}[OK]/{n_bad}[FAIL])'
                 ax.plot(pc_k, m, 'o-', linewidth=1.5, markersize=5,
                         label=lbl, color=colors[c])
                 ax.fill_between(pc_k, m - s, m + s, alpha=0.12, color=colors[c])

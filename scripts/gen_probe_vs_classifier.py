@@ -16,7 +16,7 @@ success = 0
 total = 0
 
 for dataset in datasets:
-    print(f"\n📊 {dataset}")
+    print(f"\n {dataset}")
     for K in range(9):
         for seed in range(4):
             total += 1
@@ -31,9 +31,9 @@ for dataset in datasets:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
                 success += 1
-                print(f"  ✓ K={K} seed={seed}", flush=True)
+                print(f"  [OK] K={K} seed={seed}", flush=True)
             else:
-                print(f"  ⚠ K={K} seed={seed} - {result.stderr[:100] if result.stderr else 'failed'}", flush=True)
+                print(f"  [WARN] K={K} seed={seed} - {result.stderr[:100] if result.stderr else 'failed'}", flush=True)
 
-print(f"\n📈 Probe vs Classifier Plots: {success}/{total}")
+print(f"\n Probe vs Classifier Plots: {success}/{total}")
 print(f"Output: results/figures/probe_vs_classifier/")

@@ -186,7 +186,7 @@ def plot_table_as_image(df, output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     
-    print(f"✓ Results table saved to: {output_path}")
+    print(f"[OK] Results table saved to: {output_path}")
 
 
 def main():
@@ -238,13 +238,13 @@ def main():
         png_path = comparison_dir / f'{args.dataset}_{args.model}_test_results_table.png'
     
     df.to_csv(csv_path, index=False)
-    print(f"✓ CSV saved to: {csv_path}")
+    print(f"[OK] CSV saved to: {csv_path}")
     
     # Generate PNG table
     plot_table_as_image(df, png_path)
     
     print(f"\n{'='*70}")
-    print(f"✓ Results table generation complete!")
+    print(f"[OK] Results table generation complete!")
     print(f"{'='*70}\n")
 
 

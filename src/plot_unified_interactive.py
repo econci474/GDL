@@ -1,6 +1,6 @@
 """
 Unified interactive visualization: Everything in one shareable HTML!
-Toggle: Dataset, Model, K, Seed/Averaging, Training Method, Class, Correctness
+Toggle: Dataset, Model, K, Seed/Averaging, Training Method, Class, Correctness from both linear and classifier head analysis
 """
 
 import argparse
@@ -155,7 +155,7 @@ def create_unified_interactive(datasets=None, models=None, K_values=None,
     # Method display names
     method_names = {
         'probe': 'Linear Probe',
-        'exponential': f'Exponential (ß={beta})',
+        'exponential': f'Exponential (ï¿½={beta})',
         'weighted': 'Class-Weighted'
     }
     
@@ -465,7 +465,7 @@ def create_unified_interactive(datasets=None, models=None, K_values=None,
         title=dict(
             text='<b>Unified Interactive GNN Visualization</b><br>' +
                  f'<sub>Shareable HTML | {len(trace_info)} traces loaded | ' +
-                 f'{len(datasets)} datasets × {len(models)} models × {len(K_values)} K values × {len(seeds)+1} seed options</sub>',
+                 f'{len(datasets)} datasets ï¿½ {len(models)} models ï¿½ {len(K_values)} K values ï¿½ {len(seeds)+1} seed options</sub>',
             x=0.5,
             xanchor='center',
             font=dict(size=18)

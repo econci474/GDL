@@ -51,10 +51,10 @@ for K in K_values:
                 result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
                 
                 if result.returncode == 0:
-                    print("✓")
+                    print("[OK]")
                     completed += 1
                 else:
-                    print("✗")
+                    print("[FAIL]")
                 total_plots += 1
             
             # Aggregated (all seeds)
@@ -62,10 +62,10 @@ for K in K_values:
             print(f"  K={K} {dataset} {plot_type} seed=all...", end=" ")
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             if result.returncode == 0:
-                print("✓")
+                print("[OK]")
                 completed += 1
             else:
-                print("✗")
+                print("[FAIL]")
             total_plots += 1
             
             # Aggregated (seeds 0,1,3 - not seed 2)
@@ -73,10 +73,10 @@ for K in K_values:
             print(f"  K={K} {dataset} {plot_type} seed=0,1,3...", end=" ")
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             if result.returncode == 0:
-                print("✓")
+                print("[OK]")
                 completed += 1
             else:
-                print("✗")
+                print("[FAIL]")
             total_plots += 1
 
 
@@ -98,10 +98,10 @@ for K in K_values:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
         if result.returncode == 0:
-            print("✓")
+            print("[OK]")
             depth_completed += 1
         else:
-            print("✗")
+            print("[FAIL]")
             depth_failed += 1
 
 
@@ -122,10 +122,10 @@ for K in K_values:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
         if result.returncode == 0:
-            print("✓")
+            print("[OK]")
             sep_completed += 1
         else:
-            print("✗")
+            print("[FAIL]")
             sep_failed += 1
 
 print(f"\n[4/4] Generating training diagnostic plots (loss & accuracy curves)...")
@@ -150,10 +150,10 @@ for K in K_values:
             # Generate accuracy curves
             plot_accuracy_curves(dataset, model, K, config_dict, seeds=seeds)
             
-            print("✓")
+            print("[OK]")
             diag_completed += 1
         except Exception as e:
-            print(f"✗ ({str(e)[:50]})")
+            print(f"[FAIL] ({str(e)[:50]})")
             diag_failed += 1
 
 print(f"\n{'='*60}")

@@ -246,7 +246,7 @@ def plot_neighborhood_variability(dataset, model, K, seed, loss_type, split='val
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f'{dataset}_{model}_k{K}_seed{seed}_neighborhood_variability_{loss_type}.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f'✓ Plot saved to: {output_path}')
+    print(f'[OK] Plot saved to: {output_path}')
     plt.close()
 
 
@@ -272,7 +272,7 @@ def main():
     )
     
     print(f'\n{"="*60}')
-    print('✓ Analysis complete')
+    print('[OK] Analysis complete')
     print(f'{"="*60}')
 
 

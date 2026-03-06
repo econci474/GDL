@@ -389,10 +389,10 @@ if __name__ == '__main__':
     
     # Test standard forward
     logits = model(data)
-    print(f"✓ Forward pass: logits shape = {logits.shape}")
+    print(f"[OK] Forward pass: logits shape = {logits.shape}")
     
     # Test embedding extraction
     embeddings, logits = model.forward_with_embeddings(data)
-    print(f"✓ Embedding extraction: {len(embeddings)} embeddings")
+    print(f"[OK] Embedding extraction: {len(embeddings)} embeddings")
     for k, emb in enumerate(embeddings):
         print(f"  k={k}: shape {emb.shape}")

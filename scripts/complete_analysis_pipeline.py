@@ -19,9 +19,9 @@ for dataset in datasets:
     for seed in range(4):
         emb_path = Path(f'results/runs/{dataset}/{model}/seed_{seed}/K_0/embeddings.pt')
         if emb_path.exists():
-            print(f"✓ {dataset} seed={seed}")
+            print(f"[OK] {dataset} seed={seed}")
         else:
-            print(f"✗ {dataset} seed={seed} - MISSING")
+            print(f"[FAIL] {dataset} seed={seed} - MISSING")
 
 # Phase 2: Train ALL probes (K=0 through K=8, all seeds)
 print("\n[PHASE 2] Training ALL Probes (72 jobs)")
@@ -30,7 +30,7 @@ probe_success = 0
 probe_total = 0
 
 for dataset in datasets:
-    print(f"\n📊 {dataset}")
+    print(f"\n {dataset}")
     for K in range(9):
         for seed in range(4):
             probe_total += 1
@@ -45,11 +45,11 @@ for dataset in datasets:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
                 probe_success += 1
-                print(f"  ✓ K={K} seed={seed}", flush=True)
+                print(f"  [OK] K={K} seed={seed}", flush=True)
             else:
-                print(f"  ⚠ K={K} seed={seed} - failed", flush=True)
+                print(f"  [WARN] K={K} seed={seed} - failed", flush=True)
 
-print(f"\n📈 Probes: {probe_success}/{probe_total}")
+print(f"\n Probes: {probe_success}/{probe_total}")
 
 # Phase 3: Generate all plots
 print("\n[PHASE 3] Generating All Plots")
@@ -65,9 +65,9 @@ for script in plot_scripts:
         print(f"\nRunning {script}...")
         result = subprocess.run([sys.executable, script], capture_output=True, text=True)
         if result.returncode == 0:
-            print("  ✓ Success")
+            print("  [OK] Success")
         else:
-            print(f"  ⚠ Failed: {result.stderr[:200] if result.stderr else 'unknown error'}")
+            print(f"  [WARN] Failed: {result.stderr[:200] if result.stderr else 'unknown error'}")
 
 # Phase 4: Probe vs Classifier plots
 print("\n[PHASE 4] Probe vs Classifier Comparisons")
@@ -90,7 +90,7 @@ for dataset in datasets:
             if result.returncode == 0:
                 pvc_success += 1
 
-print(f"📈 Probe vs Classifier: {pvc_success}/{pvc_total}")
+print(f" Probe vs Classifier: {pvc_success}/{pvc_total}")
 
 # Phase 5: Interactive visualization
 print("\n[PHASE 5] Interactive Visualization")
@@ -98,9 +98,9 @@ print("-"*70)
 cmd = [sys.executable, '-m', 'src.plot_unified_interactive', '--datasets', 'Cora', 'PubMed']
 result = subprocess.run(cmd, capture_output=True, text=True)
 if result.returncode == 0:
-    print("✓ Interactive viz created")
+    print("[OK] Interactive viz created")
 else:
-    print(f"⚠ Failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+    print(f"[WARN] Failed: {result.stderr[:200] if result.stderr else 'unknown'}")
 
 print(f"\n{'='*70}")
 print("PIPELINE COMPLETE!")

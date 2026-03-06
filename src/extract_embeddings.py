@@ -117,7 +117,7 @@ def extract_embeddings(dataset_name, model_name, K, seed, config, split_id=None)
     output_path = checkpoint_path.parent / 'embeddings.pt'
     torch.save(output, output_path)
     
-    print(f"\n✓ Embeddings extracted!")
+    print(f"\n[OK] Embeddings extracted!")
     print(f"  Total depths: {len(embeddings_dict)} (k=0..{K})")
     for k, emb in embeddings_dict.items():
         print(f"  k={k}: shape {emb.shape}")
@@ -140,7 +140,7 @@ def main():
     # Handle seed argument
     if args.seed.lower() == 'all':
         seeds_to_run = config['seeds']
-        print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
+        print(f"\n Running all seeds: {seeds_to_run}\n")
     else:
         seeds_to_run = [int(args.seed)]
     

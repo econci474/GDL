@@ -349,7 +349,7 @@ def main():
     # Handle seed argument
     if args.seed.lower() == 'all':
         seeds_to_run = config['seeds']
-        print(f"\n🔄 Running all seeds: {seeds_to_run}\n")
+        print(f"\n Running all seeds: {seeds_to_run}\n")
     else:
         seeds_to_run = [int(args.seed)]
     

@@ -567,7 +567,7 @@ def main():
     )
     test_loss, test_acc = evaluate_test_set(model, data, device, use_classifier_head=use_head)
 
-    print(f"🎯 Final Test Set Performance:")
+    print(f" Final Test Set Performance:")
     print(f"   Test Acc:  {test_acc:.4f}")
     print(f"   Test Loss: {test_loss:.4f}\n")
 
@@ -590,7 +590,7 @@ def main():
         evaluated_at=datetime.now().isoformat(),
     )
     append_final_result(result)
-    print(f"💾 Results saved to: {FINAL_RESULTS_PATH}\n")
+    print(f" Results saved to: {FINAL_RESULTS_PATH}\n")
     print(f"{'='*70}")
     print(f"Evaluation complete")
     print(f"{'='*70}\n")

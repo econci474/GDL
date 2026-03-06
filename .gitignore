@@ -26,3 +26,12 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Windows null device (accidentally created)
+nul
+
+# Large result archives
+entropy-selection-results.zip
+
+# Backup / scratch scripts
+scripts/plot_curvature_violations_backup.py

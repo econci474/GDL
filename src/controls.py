@@ -28,13 +28,13 @@ def layer0_baseline(dataset_name, config, seed=0):
     probe_file = Path(config['tables_dir']) / f'{dataset_name}_GCN_seed{seed}_probe.csv'
     
     if not probe_file.exists():
-        print(f"⚠ Probe results not found: {probe_file}")
+        print(f" Probe results not found: {probe_file}")
         return None
     
     probe_df = pd.read_csv(probe_file)
     layer0_results = probe_df[probe_df['k'] == 0].iloc[0]
     
-    print(f"\n📊 Layer-0 Baseline (raw features):")
+    print(f"\n Layer-0 Baseline (raw features):")
     print(f"  Val Accuracy:  {layer0_results['val_acc']:.4f}")
     print(f"  Test Accuracy: {layer0_results['test_acc']:.4f}")
     print(f"  Val Entropy:   {layer0_results['val_entropy_mean']:.4f}")
@@ -78,7 +78,7 @@ def random_label_control(dataset_name, K, seed, config):
     
     results = []
     
-    print(f"\n🎲 Random Label Control ({dataset_name}, K={K}, seed={seed})")
+    print(f"\n Random Label Control ({dataset_name}, K={K}, seed={seed})")
     print(f"  Expected accuracy: {1/num_classes:.4f}")
     print(f"  Expected entropy: {expected_entropy:.4f}")
     print(f"\n  Probing with permuted labels...")

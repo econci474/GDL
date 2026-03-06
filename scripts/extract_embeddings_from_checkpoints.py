@@ -156,7 +156,7 @@ def main():
         num_layers = len(embeddings_data['embeddings'])
         size_mb = output_path.stat().st_size / 1024 / 1024
         
-        print(f"\n✓ SUCCESS!")
+        print(f"\n[OK] SUCCESS!")
         print(f"  Extracted {num_layers} layers (k=0..{num_layers-1})")
         print(f"  File size: {size_mb:.1f} MB")
         print(f"  Saved to: {output_path}")

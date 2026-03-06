@@ -493,7 +493,7 @@ def run_one_split(
 
     pd.DataFrame(train_log).to_csv(output_dir / "train_log.csv", index=False)
 
-    print(f"\n✓ Split complete: {output_dir}")
+    print(f"\n[OK] Split complete: {output_dir}")
     print(f"  Best epoch: {best_epoch}")
     print(f"  Best val loss: {best_val_loss:.4f}")
     print(f"  Best val acc:  {best_val_acc:.4f}")
